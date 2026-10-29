@@ -1,12 +1,122 @@
-# Python-generated files
+
+# ==============================
+# Python
+# ==============================
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
+
+# Packaging / build
 build/
 dist/
+*.egg-info/
+.eggs/
 wheels/
-*.egg-info
+pip-wheel-metadata/
 
+# ==============================
 # Virtual environments
-.venv
+# ==============================
+.venv/
+venv/
+env/
+ENV/
 
+# ==============================
+# Testing, linting and coverage
+# ==============================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.hypothesis/
+
+# ==============================
+# Secrets and local configuration
+# ==============================
+.env
+.env.*
+!.env.example
+credentials.txt
+secrets/
+*.pem
+*.key
+
+# ==============================
+# Dataset and downloaded data
+# ==============================
 data/
+datasets/
+*.csv
+*.parquet
+*.feather
+*.h5
+*.hdf5
+
+# ==============================
+# Trained models and checkpoints
+# ==============================
+models/
+*.joblib
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# ==============================
+# Generated experiment outputs
+# ==============================
+results/
+outputs/
+runs/
+mlruns/
+wandb/
+lightning_logs/
+
+# ==============================
+# Jupyter
+# ==============================
+.ipynb_checkpoints/
+
+# ==============================
+# LaTeX auxiliary files
+# ==============================
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.xdv
+*.log
+
+# ==============================
+# OS and editor files
+# ==============================
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ==============================
+# Local Python version files
+# ==============================
+.python-version

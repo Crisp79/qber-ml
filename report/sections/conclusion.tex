@@ -1,0 +1,33 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+This report presented a complete, reproducible machine-learning experiment for quantum attack detection using the Quantum Attack Dataset (QAD). Our key findings:
+
+\begin{enumerate}
+    \item \textbf{High classification accuracy on QAD:} XGBoost achieves 95.8\% accuracy and 0.947 macro-F1 on 8-class quantum circuit attack detection. Random Forest is comparable (95.2\% / 0.939). SVM-RBF underperforms (72.2\% / 0.705).
+    
+    \item \textbf{Label leakage identified:} SHAP explainability and feature-group ablation conclusively show that performance is driven by attack-specific simulator parameters (\texttt{swap\_intensity}, \texttt{dp\_error\_rate}, \texttt{mt\_flip\_prob}, etc.) that directly encode the attack type and intensity. Removing this group reduces accuracy by 15-22\% for tree models.
+    
+    \item \textbf{Not BB84 reproduction:} QAD's quantum-circuit attacks differ fundamentally from the paper's seven BB84 eavesdropping attacks. The temporal-QBER framework (windowed QBER sequences, 63 physics-informed features) is not implemented on QAD because QAD lacks temporal dimension and basis reconciliation.
+    
+    \item \textbf{Reproducible pipeline:} All code, models, results, and dependencies are versioned and executable via single commands. The pipeline supports SHAP, ablation, and programmatic result access.
+\end{enumerate}
+
+\subsection{Path Forward}
+The roadmap for full BB84 temporal-QBER reproduction (Section \ref{sec:future_work}) consists of 9 milestones:
+\begin{enumerate}
+    \item BB84 simulator with basis reconciliation
+    \item Channel model (loss, noise, detector imperfections)
+    \item 7 eavesdropping attack models with overlapping channel parameters
+    \item Temporal QBER extraction (W=50 bits)
+    \item 63 validated physics-informed features
+    \item 24,000 balanced sessions generation
+    \item Training with 10-seed averaging and baseline comparison
+    \item SHAP and 5-group ablation on temporal features
+    \item Comparison to paper's 88.01\% / 0.8803 targets
+\end{enumerate}
+
+The existing codebase provides the ML infrastructure (train, evaluate, explain, predict) and feature extraction framework. The primary effort lies in the quantum simulation layer (Milestones 1-4) and feature validation (Milestone 5).
+
+\subsection{Final Remark}
+The QAD experiments serve as a valuable \textbf{infrastructure validation} for the ML pipeline, revealing the critical importance of preventing label leakage through careful feature design and channel parameter randomization---a lesson that directly informs the BB84 simulator design.

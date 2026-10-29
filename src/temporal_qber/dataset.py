@@ -25,7 +25,9 @@ def load_qad_dataset(balanced: bool = True, n_samples: Optional[int] = None) -> 
         DataFrame with features and labels
     """
     fname = "quantum_attack_balanced_1M_dataset.csv" if balanced else "quantum_attack_unbalanced_1M_dataset.csv"
-    fpath = Path("data/qad") / fname
+    # Use absolute path relative to this module
+    base_dir = Path(__file__).parent.parent.parent
+    fpath = base_dir / "data" / "qad" / fname
     
     if not fpath.exists():
         raise FileNotFoundError(f"Dataset not found at {fpath}")

@@ -1,0 +1,118 @@
+\section{Methodology}
+\label{sec:methodology}
+
+\subsection{Data Preprocessing}
+\label{sec:preprocessing}
+
+\begin{enumerate}
+    \item \textbf{Data loading:} QAD balanced CSV (1,000,000 rows $\times$ 45 columns)
+    \item \textbf{Feature/target separation:} 
+    \begin{itemize}
+        \item Features $X$: all columns except \texttt{attack\_type}, \texttt{attack\_label}
+        \item Target $y$: \texttt{attack\_label} (0--7)
+    \end{itemize}
+    \item \textbf{Categorical encoding:} \texttt{circuit\_type} one-hot encoded (3 columns: VQC, QSVM, QNN)
+    \item \textbf{Train/test split:} 80/20 stratified, \texttt{random\_state=42}
+    \item \textbf{Standardization:} \texttt{StandardScaler} fitted on training data only, applied to train and test
+\end{enumerate}
+
+\subsection{Models and Hyperparameters}
+\label{sec:models}
+
+Three classifiers matching the reference paper's selection:
+
+\subsubsection{Random Forest}
+\begin{itemize}
+    \item \texttt{n\_estimators=200}
+    \item \texttt{max\_depth=20}
+    \item \texttt{class\_weight='balanced'}
+    \item \texttt{random\_state=42}, \texttt{n\_jobs=-1}
+    \item No feature scaling required
+\end{itemize}
+
+\subsubsection{XGBoost}
+\begin{itemize}
+    \item \texttt{n\_estimators=200}
+    \item \texttt{max\_depth=10}
+    \item \texttt{learning\_rate=0.1}
+    \item \texttt{eval\_metric='mlogloss'}, \texttt{verbosity=0}
+    \item Balanced class weighting via per-sample weights from training labels (\texttt{sklearn.utils.class\_weight.compute\_sample\_weight} with \texttt{class\_weight='balanced'})
+    \item \texttt{random\_state=42}, \texttt{n\_jobs=-1}
+    \item No feature scaling required
+\end{itemize}
+
+\subsubsection{SVM-RBF}
+\begin{itemize}
+    \item Pipeline: \texttt{StandardScaler} $\rightarrow$ \texttt{SVC}
+    \item \texttt{kernel='rbf'}, \texttt{C=1.0}, \texttt{gamma='scale'}
+    \item \texttt{probability=True} (for ROC-AUC)
+    \item \texttt{class\_weight='balanced'}
+    \item \texttt{random\_state=42}
+    \item Scaling essential for SVM
+\end{itemize}
+
+\subsection{Cross-Validation}
+\begin{itemize}
+    \item 5-fold stratified cross-validation on training set only
+    \item \texttt{StratifiedKFold(n\_splits=5, shuffle=True, random\_state=42)}
+    \item Metrics: accuracy, macro-F1
+    \item Preprocessing (scaler) refitted within each fold (handled by Pipeline for SVM)
+\end{itemize}
+
+\subsection{Evaluation Metrics}
+\label{sec:metrics}
+
+\paragraph{Multiclass (8-class) metrics:}
+\begin{itemize}
+    \item \textbf{Accuracy:} $\frac{1}{N}\sum_{i=1}^N \mathbb{1}(\hat{y}_i = y_i)$
+    \item \textbf{Macro-F1:} $\frac{1}{C}\sum_{c=1}^C F1_c$ where $F1_c = 2\frac{P_c R_c}{P_c + R_c}$
+    \item \textbf{Macro-Precision:} $\frac{1}{C}\sum_{c=1}^C P_c$
+    \item \textbf{Macro-Recall:} $\frac{1}{C}\sum_{c=1}^C R_c$
+    \item \textbf{ROC-AUC (OvR):} One-vs-Rest AUC averaged across classes
+\end{itemize}
+
+\paragraph{Binary (attack vs. normal) metrics:}
+\begin{itemize}
+    \item \textbf{False Negative Rate (FNR):} $\frac{FN}{FN + TP}$ --- proportion of attacks missed
+    \item \textbf{False Positive Rate (FPR):} $\frac{FP}{FP + TN}$ --- proportion of normal flagged as attack
+\end{itemize}
+
+\paragraph{Per-class metrics:} Precision, Recall, F1, Support for each of 8 classes.
+
+\subsection{Baseline Comparisons}
+The reference paper compares against:
+\begin{enumerate}
+    \item \textbf{Fixed 11\% QBER threshold:} Binary detector, flags attack if mean QBER $> 0.11$
+    \item \textbf{CUSUM detector:} Sequential change-point detection on QBER sequence
+\end{enumerate}
+
+\textbf{Note:} These baselines require temporal QBER sequences, which QAD does not provide. Our implementation includes the baseline framework (\texttt{evaluate.py}) but reports ``Requires temporal QBER feature'' for QAD experiments.
+
+\subsection{Explainability}
+\label{sec:explainability}
+
+\subsubsection{SHAP (SHapley Additive exPlanations)}
+\begin{itemize}
+    \item \textbf{TreeExplainer} for Random Forest and XGBoost (exact, fast)
+    \item \textbf{KernelExplainer} for SVM-RBF (approximate, slow; not computed)
+    \item Background: 100 k-means samples from training data
+    \item Explanation set: 500 test samples
+    \item Outputs: Global mean $|SHAP|$ importance, summary bar plots, beeswarm plots
+\end{itemize}
+
+\subsubsection{Feature-Group Ablation}
+Leave-one-group-out: retrain model after removing each semantic feature group.
+\begin{itemize}
+    \item Groups: circuit\_structure (12), output\_distribution (11), entropy\_features (2), purity\_diversity (8), attack\_specific\_params (11), timing (1)
+    \item Metric: drop in accuracy and macro-F1 vs. baseline (all features)
+    \item Identifies which feature categories drive performance
+\end{itemize}
+
+\subsection{Reproducibility}
+\begin{itemize}
+    \item All random seeds fixed (42 for data, model-specific for training)
+    \item Full pipeline saved: models, scaler, feature names, class names
+    \item Exact dependency versions locked in \texttt{uv.lock}
+    \item Results saved as JSON for programmatic access
+    \item Single-command execution via \texttt{scripts/run\_pipeline.py}
+\end{itemize}

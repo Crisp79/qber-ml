@@ -1,0 +1,119 @@
+\section{Future Work: Full BB84 Temporal-QBER Reproduction}
+\label{sec:future_work}
+
+The following milestones are required to reproduce the reference paper's temporal-QBER framework for BB84 QKD. These are \textbf{planned tasks}, not completed work.
+
+\subsection{Milestone 1: BB84 Protocol Simulator}
+\label{milestone:bb84}
+Implement \texttt{src/temporal\_qber/bb84.py}:
+\begin{itemize}
+    \item \textbf{Alice:} Generate random bits $a_i \in \{0,1\}$ and random bases $b_i^A \in \{+, \times\}$
+    \item \textbf{State preparation:} Encode bits in qubits: $|0\rangle, |1\rangle$ (rectilinear) or $|+\rangle, |-\rangle$ (diagonal)
+    \item \textbf{Channel:} Configurable bit-flip probability $p_{flip}$, photon loss $p_{loss}$, detector noise
+    \item \textbf{Bob:} Random bases $b_i^B \in \{+, \times\}$, measure incoming qubits
+    \item \textbf{Basis reconciliation:} Public announcement of bases, keep indices where $b_i^A = b_i^B$
+    \item \textbf{Sifted key:} Alice's and Bob's bits at matching bases
+    \item \textbf{Output:} Sifted bits, bases, detection flags, channel statistics
+\end{itemize}
+
+\subsection{Milestone 2: Channel Model}
+\label{milestone:channel}
+Implement \texttt{src/temporal\_qber/channels.py}:
+\begin{itemize}
+    \item \textbf{Bit-flip channel:} Depolarizing probability $p_{flip}$ per qubit
+    \item \textbf{Photon loss:} Exponential attenuation $e^{-\alpha L}$ with distance $L$, detector efficiency $\eta$
+    \item \textbf{Detector noise:} Dark count probability $p_{dark}$, afterpulse probability $p_{after}$
+    \item \textbf{Basis-dependent efficiency:} Different $\eta$ for rectilinear vs. diagonal (for time-shift attacks)
+\end{itemize}
+
+\subsection{Milestone 3: Seven Eavesdropping Attack Models}
+\label{milestone:attacks}
+Implement \texttt{src/temporal\_qber/attacks.py} with explicit configuration and random seed per attack:
+
+\begin{enumerate}
+    \item \textbf{Intercept-Resend:} Eve measures each photon in random basis, resends measured state
+    \item \textbf{Photon Number Splitting (PNS):} Eve splits multi-photon pulses, stores one photon, forwards rest; measures stored photon after basis announcement
+    \item \textbf{Beam Splitting:} Eve taps fixed fraction of optical power, measures her portion
+    \item \textbf{Time-Shift:} Eve exploits basis-dependent detector efficiency by shifting arrival times
+    \item \textbf{Trojan Horse:} Eve injects bright light into Alice's/Bob's device, analyzes back-reflections
+    \item \textbf{Quantum Cloning:} Eve uses imperfect cloning machine (e.g., Bu\v{z}ek-Hillery), measures clone
+    \item \textbf{Fake State:} Eve sends prepared states to Bob, mimicking expected statistics
+    \item \textbf{Normal:} No eavesdropper (baseline channel)
+\end{enumerate}
+
+\textbf{Critical:} Channel parameters (loss, noise, efficiency) must use \textbf{overlapping distributions} across all 8 classes to prevent label leakage (paper: ``overlapping noise and loss distributions across normal and attack classes'').
+
+\subsection{Milestone 4: Temporal QBER Extraction}
+\label{milestone:qber}
+Implement \texttt{src/temporal\_qber/qber.py}:
+\begin{itemize}
+    \item Window size $W = 50$ sifted bits (non-overlapping)
+    \item QBER per window: $q_t = \frac{1}{W}\sum_{i=(t-1)W+1}^{tW} (a_i \oplus b_i)$
+    \item Handle incomplete final windows: \textbf{drop} (documented policy)
+    \item Minimum valid sifted key length: e.g., 200 bits (4 windows)
+    \item Output: Sequence $[q_1, q_2, \ldots, q_T]$ per session
+\end{itemize}
+
+\subsection{Milestone 5: 63 Physics-Informed Features}
+\label{milestone:features}
+Extend \texttt{src/temporal\_qber/features.py} (skeleton exists) with validated formulas for all 63 features:
+
+\begin{enumerate}
+    \item \textbf{Statistical (7):} Mean, variance, std, skewness, kurtosis, IQR, CV
+    \item \textbf{Burst/Instability (15):} Spike density, burst duration (mean/max/total), jump energy, temporal drift, error-gap statistics (mean/std/CV/skew), consecutive error runs, max consecutive errors, clustering coefficient, instability index
+    \item \textbf{Spectral/Temporal (15):} Lag 1-3 autocorrelation, DFT energy (low/mid/high), spectral entropy, centroid, bandwidth, Shannon entropy, permutation entropy, sample entropy, Hurst exponent, Lyapunov exponent, correlation dimension
+    \item \textbf{Basis-Dependent (10):} Rectilinear QBER, diagonal QBER, basis difference, basis ratio, rectilinear burst energy, diagonal burst energy, basis asymmetry, basis switch rate, basis error correlation, basis drift
+    \item \textbf{Channel-Interaction (16):} Key generation rate, transmission efficiency, QBER-loss correlation, QBER-loss interaction, multi-scale QBER (scales 1,2,4,8,16,32), loss-burst correlation, detector efficiency, dark count rate, afterpulse probability, channel stability, QBER trend
+\end{enumerate}
+
+\textbf{Validation:} Each feature as independently tested function with known inputs. Document every formula; paper only gives categories.
+
+\subsection{Milestone 6: Dataset Generation}
+\label{milestone:dataset}
+Extend \texttt{src/temporal\_qber/dataset.py}:
+\begin{itemize}
+    \item Generate 3,000 sessions per class $\times$ 8 classes = 24,000 sessions
+    \item Randomize channel conditions per session with overlapping distributions
+    \item Extract 63 features per session
+    \item Save: \texttt{session\_id, f\_001...f\_063, label, metadata (seed, config)}
+    \item Validate: No NaN/inf, balanced classes, reproducible with seed
+\end{itemize}
+
+\subsection{Milestone 7: Training and Evaluation}
+\label{milestone:training}
+Extend \texttt{src/temporal\_qber/train.py}, \texttt{evaluate.py}:
+\begin{itemize}
+    \item 80/20 stratified split, 5-fold CV on training set
+    \item 10 independent seeds (full experiment repetition)
+    \item Three classifiers: RF, XGBoost, SVM-RBF (same hyperparameters)
+    \item Baseline comparison: Fixed 11\% threshold, CUSUM detector on temporal QBER
+    \item Binary detection metrics: Accuracy, FNR, FPR (attack vs. normal)
+    \item Multiclass metrics: Accuracy, macro-F1, per-class F1, ROC-AUC (OvR)
+\end{itemize}
+
+\subsection{Milestone 8: Explainability and Ablation}
+\label{milestone:explain}
+Extend \texttt{src/temporal\_qber/explain.py}:
+\begin{itemize}
+    \item SHAP on XGBoost (TreeExplainer) with temporal-QBER features
+    \item Leave-one-feature-group-out ablation (5 groups: statistical, burst, spectral, basis, channel)
+    \item Global SHAP summary, per-class dependence plots for top features
+\end{itemize}
+
+\subsection{Milestone 9: Results Comparison}
+\label{milestone:comparison}
+Target metrics from paper (10-seed average):
+\begin{itemize}
+    \item XGBoost accuracy: 88.01\%
+    \item XGBoost macro-F1: 0.8803
+    \item Binary detection: XGBoost 88.01\% vs. CUSUM 78.99\% vs. Threshold 25.82\%
+\end{itemize}
+
+\textbf{Note on exact reproduction:} The paper's 6 pages do not fully specify all 63 feature formulas or every attack-simulation parameter. Our implementation will document all assumptions. Exact numerical reproduction requires the missing implementation details.
+
+\subsection{Implementation Dependencies}
+\begin{itemize}
+    \item No quantum framework required (classical probability simulation sufficient)
+    \item Existing ML stack: scikit-learn, XGBoost, SHAP, NumPy, Pandas, SciPy
+    \item Optional: Qiskit for validation against quantum simulations
+\end{itemize}

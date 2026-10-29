@@ -1,0 +1,36 @@
+
+# Normalize text files to LF in Git
+* text=auto eol=lf
+
+# Python and project configuration
+*.py text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.gitignore text eol=lf
+
+# LaTeX research report
+*.tex text eol=lf
+*.bib text eol=lf
+*.sty text eol=lf
+*.cls text eol=lf
+
+# Jupyter notebooks
+*.ipynb text eol=lf
+
+# Windows scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.joblib binary
+*.pkl binary
+*.pt binary
+*.pth binary
