@@ -1,0 +1,66 @@
+\section{Limitations and Threats to Validity}
+\label{sec:limitations}
+
+\subsection{Label Leakage via Attack-Specific Parameters}
+\label{sec:leakage}
+The most significant limitation is the presence of features that directly encode the attack type and intensity. As demonstrated by SHAP (Section \ref{sec:discussion}) and ablation (Table \ref{tab:ablation}), the top features for tree models are:
+\begin{itemize}
+    \item \texttt{swap\_intensity}, \texttt{n\_swaps} (swap\_injection only)
+    \item \texttt{gate\_ins\_intensity}, \texttt{n\_insertions} (gate\_insertion only)
+    \item \texttt{dp\_error\_rate} (depolarizing\_noise only)
+    \item \texttt{mt\_flip\_prob} (measurement\_tampering only)
+    \item \texttt{pl\_detuning\_mag} (pulse\_level\_attack only)
+    \item \texttt{tr\_t1}, \texttt{tr\_t2}, \texttt{tr\_gate\_time} (thermal\_relaxation only)
+    \item \texttt{has\_noise\_model} (binary: clean vs. any attack)
+\end{itemize}
+
+These features allow the classifier to learn simple decision rules (e.g., ``if \texttt{swap\_intensity} $> 0$ then swap\_injection'') rather than detecting attack signatures from quantum measurement statistics. The \textbf{14-19\% accuracy drop} (17-22\% F1 drop) when removing the attack-specific parameter group quantifies the leakage. A controlled experiment removing only \texttt{has\_noise\_model} showed minimal impact on tree models (RF: 95.45\% $\to$ 95.50\%, XGB: 95.75\% $\to$ 95.50\%), confirming that the attack-specific parameters (not the binary indicator) are the primary leakage vector.
+
+\subsection{Different Threat Model}
+QAD simulates an adversary who \textbf{modifies the quantum circuit} before or during execution (gate tampering, noise injection). The reference paper addresses an adversary who \textbf{intercepts the quantum channel} between Alice and Bob (photon interception, basis manipulation, detector attacks). These are fundamentally different:
+\begin{itemize}
+    \item QAD: White-box circuit access, parametric attacks
+    \item BB84: Black-box channel access, physical-layer attacks
+\end{itemize}
+
+\subsection{No Temporal Dimension}
+QAD provides single aggregate statistics per circuit execution (1024 shots). The paper's innovation is temporal-QBER: a sequence of QBER values computed over windows of $W=50$ sifted bits, capturing error dynamics within a session. Our \texttt{features.py} implements the 63 temporal features but there is no temporal data to apply them to.
+
+\subsection{No Basis Reconciliation}
+QAD measures all qubits in the computational basis after circuit execution. BB84 uses random basis selection (rectilinear/diagonal) with basis sifting, discarding $\sim$50\% of bits. This basis-dependent structure enables the paper's basis-dependent feature category (10 features).
+
+\subsection{No Photon Loss / Detection Efficiency Model}
+QAD uses fixed 1024 shots per circuit. Real QKD systems have:
+\begin{itemize}
+    \item Channel loss (exponential with distance)
+    \item Detector efficiency ($<100\%$)
+    \item Dark counts, afterpulsing
+    \item Variable sifted key length per session
+\end{itemize}
+The paper's channel-interaction features (16 features) model these effects.
+
+\subsection{Artificially Balanced Classes}
+QAD balanced dataset has exactly 100,000 samples per attack (300,000 clean). Real attack frequencies are unknown and likely highly imbalanced. The unbalanced variant exists but was not used.
+
+\subsection{Simulator-Specific Noise Models}
+QAD uses Qiskit AerSimulator noise models (depolarizing, amplitude damping, thermal relaxation). These may not reflect:
+\begin{itemize}
+    \item Hardware-specific noise correlations
+    \item Non-Markovian noise
+    \item Crosstalk, calibration drift
+    \item Environmental fluctuations
+\end{itemize}
+
+\subsection{Single Experimental Run}
+Unlike the paper's 10 independent seeds, we report results from a single train/test split (random\_state=42) and single model training per algorithm. Variance estimates come only from 5-fold CV.
+
+\subsection{No Baseline Comparison}
+The fixed 11\% QBER threshold and CUSUM baselines require temporal QBER sequences, which QAD does not provide. Our implementation includes the framework but cannot compute these baselines for QAD.
+
+\subsection{Reproducibility Scope}
+While our pipeline is reproducible (fixed seeds, locked dependencies, saved artifacts), exact reproduction of the reference paper's results is \textbf{not possible} without:
+\begin{enumerate}
+    \item The paper's exact 63 feature formulas (only categories given)
+    \item The paper's attack simulation parameters (not fully specified in 6 pages)
+    \item The paper's BB84 simulator implementation
+\end{enumerate}

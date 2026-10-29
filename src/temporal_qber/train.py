@@ -5,16 +5,22 @@ Model training for Temporal-QBER attack detection
 import joblib
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.utils.class_weight import compute_sample_weight
 from xgboost import XGBClassifier
 import time
 
 from .config import TrainConfig, QAD_CLASSES
+
+
+def compute_balanced_sample_weights(y: np.ndarray) -> np.ndarray:
+    """Compute balanced sample weights for multiclass classification."""
+    return compute_sample_weight(class_weight='balanced', y=y)
 
 
 def create_models(config: TrainConfig) -> Dict[str, Any]:
@@ -54,11 +60,17 @@ def create_models(config: TrainConfig) -> Dict[str, Any]:
 
 
 def train_model(model: Any, X_train: np.ndarray, y_train: np.ndarray, 
-                model_name: str) -> Tuple[Any, float]:
+                model_name: str, sample_weights: Optional[np.ndarray] = None) -> Tuple[Any, float]:
     """Train a single model and return training time."""
     print(f"Training {model_name}...")
     start = time.time()
-    model.fit(X_train, y_train)
+    
+    # XGBoost supports sample_weight parameter
+    if model_name == 'xgboost' and sample_weights is not None:
+        model.fit(X_train, y_train, sample_weight=sample_weights)
+    else:
+        model.fit(X_train, y_train)
+        
     elapsed = time.time() - start
     print(f"  Completed in {elapsed:.1f}s")
     return model, elapsed
@@ -70,16 +82,37 @@ def cross_validate_model(model: Any, X: np.ndarray, y: np.ndarray,
     print(f"Cross-validating {model_name}...")
     cv = StratifiedKFold(n_splits=config.cv_folds, shuffle=True, random_state=config.random_state)
     
-    scores = cross_val_score(model, X, y, cv=cv, scoring='accuracy', n_jobs=config.n_jobs)
-    f1_scores = cross_val_score(model, X, y, cv=cv, scoring='f1_macro', n_jobs=config.n_jobs)
+    scores = []
+    f1_scores = []
+    
+    for train_idx, val_idx in cv.split(X, y):
+        X_train_fold, X_val_fold = X[train_idx], X[val_idx]
+        y_train_fold, y_val_fold = y[train_idx], y[val_idx]
+        
+        # Clone and fit model for this fold
+        from sklearn.base import clone
+        fold_model = clone(model)
+        
+        if model_name == 'xgboost':
+            # Compute sample weights for this fold
+            sample_weights_fold = compute_balanced_sample_weights(y_train_fold)
+            fold_model.fit(X_train_fold, y_train_fold, sample_weight=sample_weights_fold)
+        else:
+            fold_model.fit(X_train_fold, y_train_fold)
+        
+        # Evaluate
+        y_pred = fold_model.predict(X_val_fold)
+        from sklearn.metrics import accuracy_score, f1_score
+        scores.append(accuracy_score(y_val_fold, y_pred))
+        f1_scores.append(f1_score(y_val_fold, y_pred, average='macro'))
     
     return {
         'cv_accuracy_mean': np.mean(scores),
         'cv_accuracy_std': np.std(scores),
         'cv_f1_macro_mean': np.mean(f1_scores),
         'cv_f1_macro_std': np.std(f1_scores),
-        'cv_scores': scores.tolist(),
-        'cv_f1_scores': f1_scores.tolist(),
+        'cv_scores': [float(s) for s in scores],
+        'cv_f1_scores': [float(s) for s in f1_scores],
     }
 
 
@@ -95,13 +128,19 @@ def train_all_models(X_train: np.ndarray, y_train: np.ndarray,
     models = create_models(config)
     results = {}
     
+    # Compute balanced sample weights for XGBoost
+    xgb_sample_weights = compute_balanced_sample_weights(y_train)
+    
     for name, model in models.items():
         print(f"\n{'='*50}")
         print(f"Model: {name}")
         print(f"{'='*50}")
         
-        # Train
-        model, train_time = train_model(model, X_train, y_train, name)
+        # Train with sample weights for XGBoost
+        if name == 'xgboost':
+            model, train_time = train_model(model, X_train, y_train, name, xgb_sample_weights)
+        else:
+            model, train_time = train_model(model, X_train, y_train, name)
         
         # Test accuracy
         test_acc = model.score(X_test, y_test)

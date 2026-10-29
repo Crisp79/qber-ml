@@ -1,0 +1,19 @@
+\begin{table}[H]
+\centering
+\caption{Feature-Group Ablation: Accuracy and Macro-F1 Drop from Baseline}
+\label{tab:ablation}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Group} & \textbf{N} & \multicolumn{2}{c}{\textbf{XGBoost}} & \multicolumn{2}{c}{\textbf{Random Forest}} & \textbf{SVM-RBF} \\
+\cmidrule(lr){3-4} \cmidrule(lr){5-6} \cmidrule(lr){7-7}
+ & & $\Delta$Acc & $\Delta$F1 & $\Delta$Acc & $\Delta$F1 & $\Delta$Acc \\
+\midrule
+circuit\_structure & 12 & 5.2\% & 6.7\% & 5.8\% & 7.4\% & 32.1\% \\
+output\_distribution & 11 & -0.7\% & -0.9\% & -0.5\% & -0.6\% & -2.8\% \\
+entropy\_features & 2 & -0.5\% & -0.6\% & -0.3\% & -0.4\% & -1.1\% \\
+purity\_diversity & 8 & -0.6\% & -0.8\% & -0.1\% & -0.2\% & -0.3\% \\
+attack\_specific\_params & 11 & 14.2\% & 17.4\% & 16.1\% & 19.4\% & 5.2\% \\
+timing & 1 & -0.7\% & -0.8\% & -0.4\% & -0.5\% & -0.3\% \\
+\bottomrule
+\end{tabular}
+\end{table}

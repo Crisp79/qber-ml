@@ -1,0 +1,19 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Quantum Key Distribution (QKD) provides information-theoretic security for cryptographic key exchange, with the BB84 protocol being the most widely implemented variant. Security in BB84 relies on detecting eavesdropping through an elevated Quantum Bit Error Rate (QBER). Traditional threshold-based detection uses a fixed QBER limit (typically 11\%), above which the key is discarded. However, this approach lacks sensitivity to attack type and temporal dynamics.
+
+The reference paper proposes a \textbf{temporal-QBER framework}: instead of a single average QBER, the sifted key is divided into windows of $W=50$ bits, producing a QBER sequence $[q_1, q_2, \ldots, q_T]$. From this sequence, 63 physics-informed features are extracted across five categories (statistical, burst/instability, spectral/temporal, basis-dependent, channel-interaction). Three classifiers (Random Forest, XGBoost, SVM-RBF) are trained on 24,000 simulated sessions (3,000 per class across 7 attacks + normal). The paper reports XGBoost achieving 88.01\% accuracy and 0.8803 macro-F1, significantly outperforming fixed-threshold (25.82\%) and CUSUM (78.99\%) baselines in binary detection.
+
+This report documents our current implementation, which uses the \textbf{Quantum Attack Dataset (QAD)} as a proxy dataset while the BB84 temporal-QBER simulator is under development. QAD contains 1,000,000 samples of quantum circuit executions with 7 attack types (gate tampering, noise models, measurement tampering, pulse-level distortions) plus clean circuits. We evaluate the same three classifiers and provide full explainability (SHAP) and ablation analysis.
+
+\textbf{Critical distinction:} QAD's attack classes are \textit{quantum circuit attacks} (adversary modifies circuit structure/noise), not BB84 \textit{eavesdropping attacks} (adversary intercepts quantum channel between Alice and Bob). The high accuracy on QAD (95.8\% XGBoost) is largely attributable to attack-specific simulator parameters that directly encode the attack type---a form of label leakage not present in the BB84 threat model. This report maintains this distinction throughout.
+
+\paragraph{Contributions of this work:}
+\begin{enumerate}
+    \item Complete reproducible ML pipeline for QAD dataset with three classifiers
+    \item Comprehensive evaluation: accuracy, macro-F1, ROC-AUC, per-class metrics, confusion matrices
+    \item SHAP explainability for tree-based models identifying feature importance
+    \item Leave-one-feature-group-out ablation quantifying feature group contributions
+    \item Documented limitations and roadmap for BB84 temporal-QBER reproduction
+\end{enumerate}

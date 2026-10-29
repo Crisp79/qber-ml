@@ -1,0 +1,45 @@
+\section{Background and Related Work}
+\label{sec:background}
+
+\subsection{BB84 Quantum Key Distribution}
+The BB84 protocol establishes a shared secret key between two parties (Alice and Bob) by transmitting qubits in randomly chosen bases (rectilinear $+$ or diagonal $\times$). After transmission, Alice and Bob publicly compare bases and keep only bits measured in matching bases (sifting). The Quantum Bit Error Rate (QBER) on the sifted key reveals eavesdropping: an intercept-resend attack introduces a minimum 25\% QBER.
+
+\subsection{QBER-Based Attack Detection}
+Traditional QKD systems use a fixed QBER threshold (typically 11\% for BB84 with one-way post-processing). If the observed QBER exceeds this threshold, the key is discarded. This binary decision ignores:
+\begin{itemize}
+    \item Temporal dynamics of errors within a session
+    \item Attack-type discrimination
+    \item Channel condition variations (loss, noise)
+\end{itemize}
+
+\subsection{Temporal-QBER Framework (Reference Paper)}
+The reference paper introduces a temporal-QBER framework:
+\begin{enumerate}
+    \item \textbf{Windowing:} Sifted key divided into non-overlapping windows of $W=50$ bits
+    \item \textbf{QBER sequence:} $q_t = \frac{1}{W}\sum_{i=(t-1)W+1}^{tW} (a_i \oplus b_i)$
+    \item \textbf{63 features:} Five categories extracted from the QBER sequence
+    \item \textbf{8 classes:} Normal + 7 eavesdropping attacks
+    \item \textbf{24,000 sessions:} 3,000 per class, balanced
+    \item \textbf{Models:} Random Forest, XGBoost, SVM-RBF with 5-fold CV, 10 seeds
+\end{enumerate}
+
+\subsection{Quantum Attack Datasets}
+Existing quantum ML datasets include:
+\begin{itemize}
+    \item \textbf{QAD}: Quantum circuit attacks (gate tampering, noise, measurement tampering, pulse distortions), 1M samples, 44 features, 8 classes
+    \item \textbf{HQC-2026}: Hybrid quantum-classical network intrusion, 14.69M samples, 96 features, 7 attack categories + benign
+    \item \textbf{IBM Quantum Challenge datasets}: Various quantum computing benchmarks
+\end{itemize}
+
+QAD is the most directly applicable for supervised quantum attack classification but operates at the circuit level, not the QKD protocol level.
+
+\subsection{Machine Learning for Quantum Security}
+ML has been applied to:
+\begin{itemize}
+    \item Quantum error correction decoding
+    \item Quantum state tomography
+    \item Quantum device characterization
+    \item Side-channel attack detection in QKD
+\end{itemize}
+
+The temporal-QBER approach is, to our knowledge, the first to apply windowed QBER sequences with physics-informed feature engineering for multi-attack classification in BB84.

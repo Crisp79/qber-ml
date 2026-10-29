@@ -1,0 +1,165 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{siunitx}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{float}
+\usepackage{longtable}
+\usepackage{makecell}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\geometry{margin=1in}
+\sisetup{detect-all, group-separator={,}}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue,
+    pdfauthor={QBER-ML Project},
+    pdftitle={Quantum Circuit Attack Classification Using QAD: An Exploratory Study Toward Temporal-QBER Detection in BB84},
+    pdfsubject={Machine Learning for Quantum Attack Detection}
+}
+
+\definecolor{codegray}{gray}{0.95}
+\lstset{
+    backgroundcolor=\color{codegray},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    tabsize=4
+}
+
+\title{QBER Error Detection using ML Models}
+\author{QBER-ML Project}
+\date{\today}
+\providecommand{\keywords}[1]{%
+  \par\smallskip
+  \noindent\textbf{Keywords: }#1\par
+}
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\fontsize{40}{48}\selectfont \textbf{A Project Report for Eavesdropping Detection in Quantum Communication}}\\[1cm] 
+\includegraphics[width=0.4\textwidth]{figures/bits_logo.png}\\[1cm] 
+{\Large Birla Institute Of Technology and Science Pilani\\ Hyderabad Campus}\\[1cm] 
+{\Large \textbf{Study Oriented Project \\(CS F264)}}\\[0.5cm] 
+
+{\large Under the supervision of\\ \textbf{Prof. Nikumani Choudhury}}\\[1.5cm]
+
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Sr No.} & \textbf{Name} & \textbf{ID Number} \\
+\hline
+1 & ALBERT SEBASTAIN & 2023A7PS0118H \\
+\hline
+2 & AKSHITH VUPPALA & 2023A7PS0032H \\
+\hline
+3 & MAHIMA NANDANA KUNADHARAJU & 2023B4A70660H \\
+\hline
+\end{tabular}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\input{sections/introduction}
+\input{sections/background}
+\input{sections/dataset}
+\input{sections/methodology}
+\input{sections/results}
+\input{sections/discussion}
+\input{sections/limitations}
+\input{sections/future_work}
+\input{sections/conclusion}
+
+\appendix
+\section{Reproducibility}
+\label{app:reproducibility}
+
+\subsection{Package Versions}
+\begin{itemize}
+    \item Python 3.12.13
+    \item NumPy 2.5.4
+    \item Pandas 3.1.0
+    \item scikit-learn 1.9.1
+    \item XGBoost 3.4.1
+    \item SHAP 0.54.1
+    \item Matplotlib 3.11.2
+    \item Seaborn 0.13.2
+    \item Joblib 1.6.0
+    \item SciPy 1.18.1
+\end{itemize}
+
+\subsection{Experiment Configuration}
+\begin{itemize}
+    \item Dataset: QAD balanced, 10,000 samples (of 1,000,000 available)
+    \item Features: 42 raw + 3 one-hot circuit\_type = 45 model features
+    \item Train/Test: 80/20 stratified, random\_state=42
+    \item CV: 5-fold stratified on training split only, random\_state=42
+    \item Class weights: balanced (Random Forest, SVM); sample weights for XGBoost
+    \item Random Forest: 200 estimators, max\_depth=20
+    \item XGBoost: 200 estimators, max\_depth=10, lr=0.1, sample weights from training labels
+    \item SVM-RBF: C=1.0, gamma=scale, probability=True, class\_weight=balanced
+\end{itemize}
+
+\subsection{Saved Artifacts}
+\begin{itemize}
+    \item Models: \texttt{models/random\_forest.joblib}, \texttt{models/xgboost.joblib}, \texttt{models/svm\_rbf.joblib}
+    \item Preprocessing: \texttt{models/preprocessing.joblib} (scaler + feature names)
+    \item Class names: \texttt{models/class\_names.joblib}
+    \item Evaluation: \texttt{results/evaluation\_results.json}
+    \item Plots: \texttt{results/*.png}
+    \item SHAP results: \texttt{results/*\_shap\_results.json}
+\end{itemize}
+
+\subsection{Commands to Reproduce}
+\begin{lstlisting}[language=bash]
+# Full pipeline (retrain)
+uv run python scripts/run_pipeline.py --n-samples 10000
+
+# Quick test
+uv run python scripts/test_pipeline.py
+
+# Demo predictions
+uv run python -m temporal_qber.predict
+
+# Generate report
+uv run python scripts/generate_report.py
+\end{lstlisting}
+
+\clearpage
+\section*{References}
+\addcontentsline{toc}{section}{References}
+
+\begin{enumerate}
+\item \textbf{Bennett, C. H.} and \textbf{Brassard, G.} (1984). Quantum cryptography: Public key distribution and coin tossing. \textit{Proceedings of IEEE International Conference on Computers, Systems and Signal Processing}, 175--179.
+
+\item \textbf{Shor, P. W.} and \textbf{Preskill, J.} (2000). Simple proof of security of the BB84 quantum key distribution protocol. \textit{Physical Review Letters}, 85(2):441--444.
+
+\item \textbf{Reference Paper} (2026). Beyond the QBER Threshold: A Temporal QBER Based Machine Learning Framework for Multi Attack Detection in BB84 QKD. \textit{arXiv preprint arXiv:2608.04047v1}.
+
+\item \textbf{Udugahapattuwa, P.}, \textbf{de Alwis, C.}, \textbf{Wijewardane, U.}, and \textbf{Liyanage, M.} (2026). A Comprehensive Quantum Attack Dataset (QAD). \textit{Kaggle}. DOI: 10.34740/kaggle/ds/9778273. URL: \url{https://www.kaggle.com/datasets/dpdu1995/a-comprehensive-quantum-attack-dataset-qad}.
+
+\item \textbf{Pedregosa, F.}, \textbf{Varoquaux, G.}, \textbf{Gramfort, A.}, et al. (2011). scikit-learn: Machine Learning in Python. \textit{Journal of Machine Learning Research}, 12:2825--2830.
+
+\item \textbf{Chen, T.} and \textbf{Guestrin, C.} (2016). XGBoost: A Scalable Tree Boosting System. \textit{Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining}, 785--794.
+
+\item \textbf{Lundberg, S. M.} and \textbf{Lee, S.-I.} (2017). A Unified Approach to Interpreting Model Predictions. \textit{Advances in Neural Information Processing Systems}, 30:4765--4774.
+\end{enumerate}
+
+\end{document}
