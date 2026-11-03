@@ -225,44 +225,72 @@ def feature_group_ablation(
     n_groups = len(feature_groups)
     
     if progress and progress.enabled:
-        group_iter = progress.progress(
+        with progress.progress(
             list(feature_groups.items()),
             desc=f"Ablation {model_name}",
             unit="group"
-        )
+        ) as group_iter:
+            for group_name, feat_indices in group_iter:
+                logger.info(f"Ablating group: {group_name} ({len(feat_indices)} features)...")
+                
+                # Create mask to exclude this group
+                mask = np.ones(len(feature_names), dtype=bool)
+                mask[feat_indices] = False
+                
+                X_train_ablated = X_train[:, mask]
+                X_test_ablated = X_test[:, mask]
+                
+                # Retrain
+                ablated_model = clone(model)
+                ablated_model.fit(X_train_ablated, y_train)
+                y_pred = ablated_model.predict(X_test_ablated)
+                
+                acc = accuracy_score(y_test, y_pred)
+                f1 = f1_score(y_test, y_pred, average='macro')
+                
+                drop_acc = baseline_acc - acc
+                drop_f1 = baseline_f1 - f1
+                
+                ablation_results[group_name] = {
+                    'accuracy': acc,
+                    'f1_macro': f1,
+                    'drop_accuracy': drop_acc,
+                    'drop_f1': drop_f1,
+                    'n_features_removed': len(feat_indices)
+                }
+                
+                logger.info(f"  Acc={acc:.4f} (-{drop_acc:.4f}), F1={f1:.4f} (-{drop_f1:.4f})")
     else:
-        group_iter = list(feature_groups.items())
-    
-    for group_name, feat_indices in group_iter:
-        logger.info(f"Ablating group: {group_name} ({len(feat_indices)} features)...")
-        
-        # Create mask to exclude this group
-        mask = np.ones(len(feature_names), dtype=bool)
-        mask[feat_indices] = False
-        
-        X_train_ablated = X_train[:, mask]
-        X_test_ablated = X_test[:, mask]
-        
-        # Retrain
-        ablated_model = clone(model)
-        ablated_model.fit(X_train_ablated, y_train)
-        y_pred = ablated_model.predict(X_test_ablated)
-        
-        acc = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred, average='macro')
-        
-        drop_acc = baseline_acc - acc
-        drop_f1 = baseline_f1 - f1
-        
-        ablation_results[group_name] = {
-            'accuracy': acc,
-            'f1_macro': f1,
-            'drop_accuracy': drop_acc,
-            'drop_f1': drop_f1,
-            'n_features_removed': len(feat_indices)
-        }
-        
-        logger.info(f"  Acc={acc:.4f} (-{drop_acc:.4f}), F1={f1:.4f} (-{drop_f1:.4f})")
+        for group_name, feat_indices in feature_groups.items():
+            logger.info(f"Ablating group: {group_name} ({len(feat_indices)} features)...")
+            
+            # Create mask to exclude this group
+            mask = np.ones(len(feature_names), dtype=bool)
+            mask[feat_indices] = False
+            
+            X_train_ablated = X_train[:, mask]
+            X_test_ablated = X_test[:, mask]
+            
+            # Retrain
+            ablated_model = clone(model)
+            ablated_model.fit(X_train_ablated, y_train)
+            y_pred = ablated_model.predict(X_test_ablated)
+            
+            acc = accuracy_score(y_test, y_pred)
+            f1 = f1_score(y_test, y_pred, average='macro')
+            
+            drop_acc = baseline_acc - acc
+            drop_f1 = baseline_f1 - f1
+            
+            ablation_results[group_name] = {
+                'accuracy': acc,
+                'f1_macro': f1,
+                'drop_accuracy': drop_acc,
+                'drop_f1': drop_f1,
+                'n_features_removed': len(feat_indices)
+            }
+            
+            logger.info(f"  Acc={acc:.4f} (-{drop_acc:.4f}), F1={f1:.4f} (-{drop_f1:.4f})")
     
     # Plot ablation results
     plt.figure(figsize=(10, 6))
