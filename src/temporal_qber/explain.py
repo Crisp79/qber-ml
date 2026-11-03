@@ -9,15 +9,27 @@ import joblib
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import warnings
-warnings.filterwarnings('ignore')
+import time
 
 from .config import QAD_CLASSES
+from .logging_config import get_logger
+from .progress import ProgressManager
 
 
-def explain_model_shap(model: Any, X_train: np.ndarray, X_test: np.ndarray,
-                       feature_names: List[str], class_names: List[str],
-                       model_name: str, output_dir: str, 
-                       max_samples: int = 500) -> Dict[str, Any]:
+warnings.filterwarnings('ignore')
+
+
+def explain_model_shap(
+    model: Any, 
+    X_train: np.ndarray, 
+    X_test: np.ndarray,
+    feature_names: List[str], 
+    class_names: List[str],
+    model_name: str, 
+    output_dir: str, 
+    max_samples: int = 500,
+    progress: Optional[ProgressManager] = None
+) -> Dict[str, Any]:
     """
     Generate SHAP explanations for tree-based models (XGBoost, Random Forest).
     
@@ -30,10 +42,12 @@ def explain_model_shap(model: Any, X_train: np.ndarray, X_test: np.ndarray,
         model_name: Name for output files
         output_dir: Directory to save plots
         max_samples: Max samples to explain (for speed)
+        progress: Optional progress manager for progress reporting
     
     Returns:
         Dictionary with SHAP values and summary info
     """
+    logger = get_logger()
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     # Sample data for speed
@@ -41,36 +55,60 @@ def explain_model_shap(model: Any, X_train: np.ndarray, X_test: np.ndarray,
     X_explain = X_test[:n_explain]
     
     # Create explainer
-    print(f"Creating SHAP explainer for {model_name}...")
+    logger.info(f"Creating SHAP explainer for {model_name}...")
     
-    # For tree models, use TreeExplainer
-    if hasattr(model, 'get_booster') or hasattr(model, 'estimators_'):
-        explainer = shap.TreeExplainer(model)
+    if progress and progress.enabled:
+        with progress.progress(total=3, desc=f"SHAP {model_name}", unit="step") as pbar:
+            # For tree models, use TreeExplainer
+            if hasattr(model, 'get_booster') or hasattr(model, 'estimators_'):
+                explainer = shap.TreeExplainer(model)
+            else:
+                # For other models, use KernelExplainer (slower)
+                # Use a small background sample
+                bg_size = min(100, len(X_train))
+                background = shap.kmeans(X_train, bg_size)
+                explainer = shap.KernelExplainer(model.predict_proba, background)
+            pbar.update(1)
+            
+            # Compute SHAP values
+            logger.info(f"Computing SHAP values for {n_explain} samples...")
+            shap_values = explainer.shap_values(X_explain)
+            pbar.update(1)
+            
+            # Process results
+            _process_and_save_shap(
+                shap_values, X_explain, feature_names, class_names,
+                model_name, output_dir, logger
+            )
+            pbar.update(1)
     else:
-        # For other models, use KernelExplainer (slower)
-        # Use a small background sample
-        bg_size = min(100, len(X_train))
-        background = shap.kmeans(X_train, bg_size)
-        explainer = shap.KernelExplainer(model.predict_proba, background)
+        # For tree models, use TreeExplainer
+        if hasattr(model, 'get_booster') or hasattr(model, 'estimators_'):
+            explainer = shap.TreeExplainer(model)
+        else:
+            # For other models, use KernelExplainer (slower)
+            # Use a small background sample
+            bg_size = min(100, len(X_train))
+            background = shap.kmeans(X_train, bg_size)
+            explainer = shap.KernelExplainer(model.predict_proba, background)
+        
+        # Compute SHAP values
+        logger.info(f"Computing SHAP values for {n_explain} samples...")
+        shap_values = explainer.shap_values(X_explain)
+        
+        # Process results
+        _process_and_save_shap(
+            shap_values, X_explain, feature_names, class_names,
+            model_name, output_dir, logger
+        )
     
-    # Compute SHAP values
-    print(f"Computing SHAP values for {n_explain} samples...")
-    shap_values = explainer.shap_values(X_explain)
-    
-    # Handle different SHAP value formats
-    # TreeExplainer for multi-class returns (n_samples, n_features, n_classes)
-    # KernelExplainer returns list of arrays
+    # Feature importance ranking
     if isinstance(shap_values, list):
-        # Shape: [n_classes, n_samples, n_features]
-        shap_array = np.array(shap_values)
-        # Mean absolute SHAP per class
-        mean_abs_shap = np.mean(np.abs(shap_array), axis=1)  # [n_classes, n_features]
-        # Global mean absolute SHAP
-        global_mean_abs = np.mean(mean_abs_shap, axis=0)
+        # Multi-class: use first class or average
+        global_mean_abs = np.mean([np.mean(np.abs(sv), axis=0) for sv in shap_values], axis=0)
     elif isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
         # Shape: [n_samples, n_features, n_classes]
-        mean_abs_shap = np.mean(np.abs(shap_values), axis=0).T  # [n_classes, n_features]
-        global_mean_abs = np.mean(mean_abs_shap, axis=0)
+        global_mean_abs = np.mean(np.abs(shap_values), axis=(0, 2))
     else:
         # Binary or single output
         global_mean_abs = np.mean(np.abs(shap_values), axis=0)
@@ -80,12 +118,33 @@ def explain_model_shap(model: Any, X_train: np.ndarray, X_test: np.ndarray,
     
     # Validate length matches feature_names
     if len(global_mean_abs) != len(feature_names):
-        print(f"Warning: SHAP values length ({len(global_mean_abs)}) != feature_names ({len(feature_names)})")
-        # Truncate or pad
+        logger.warning(f"SHAP values length ({len(global_mean_abs)}) != feature_names ({len(feature_names)})")
         min_len = min(len(global_mean_abs), len(feature_names))
         global_mean_abs = global_mean_abs[:min_len]
         feature_names = feature_names[:min_len]
     
+    importance_idx = np.argsort(global_mean_abs)[::-1]
+    top_features = [(feature_names[i], float(global_mean_abs[i])) for i in importance_idx[:20]]
+    
+    return {
+        'shap_values': shap_values,
+        'global_importance': global_mean_abs.tolist(),
+        'top_features': top_features,
+        'feature_names': feature_names,
+        'class_names': class_names
+    }
+
+
+def _process_and_save_shap(
+    shap_values, 
+    X_explain, 
+    feature_names, 
+    class_names,
+    model_name: str,
+    output_dir: str,
+    logger
+):
+    """Process SHAP values and save plots."""
     # Plot global summary
     plt.figure(figsize=(10, 8))
     if isinstance(shap_values, list):
@@ -115,25 +174,21 @@ def explain_model_shap(model: Any, X_train: np.ndarray, X_test: np.ndarray,
     plt.savefig(Path(output_dir) / f"{model_name}_shap_beeswarm.png", dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"SHAP plots saved to {output_dir}")
-    
-    # Feature importance ranking
-    importance_idx = np.argsort(global_mean_abs)[::-1]
-    top_features = [(feature_names[i], float(global_mean_abs[i])) for i in importance_idx[:20]]
-    
-    return {
-        'shap_values': shap_values,
-        'global_importance': global_mean_abs.tolist(),
-        'top_features': top_features,
-        'feature_names': feature_names,
-        'class_names': class_names
-    }
+    logger.info(f"SHAP plots saved to {output_dir}")
 
 
-def feature_group_ablation(model: Any, X_train: np.ndarray, y_train: np.ndarray,
-                           X_test: np.ndarray, y_test: np.ndarray,
-                           feature_names: List[str], feature_groups: Dict[str, List[int]],
-                           model_name: str, output_dir: str) -> Dict[str, Any]:
+def feature_group_ablation(
+    model: Any, 
+    X_train: np.ndarray, 
+    y_train: np.ndarray,
+    X_test: np.ndarray, 
+    y_test: np.ndarray,
+    feature_names: List[str], 
+    feature_groups: Dict[str, List[int]],
+    model_name: str, 
+    output_dir: str,
+    progress: Optional[ProgressManager] = None
+) -> Dict[str, Any]:
     """
     Leave-one-feature-group-out ablation study.
     
@@ -145,28 +200,41 @@ def feature_group_ablation(model: Any, X_train: np.ndarray, y_train: np.ndarray,
         feature_groups: Dict mapping group name to list of feature indices
         model_name: Name for output
         output_dir: Output directory
+        progress: Optional progress manager for progress reporting
     
     Returns:
         Ablation results
     """
+    logger = get_logger()
     from sklearn.base import clone
     from sklearn.metrics import accuracy_score, f1_score
     
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     # Baseline performance with all features
+    logger.info(f"Computing baseline performance for {model_name}...")
     baseline_model = clone(model)
     baseline_model.fit(X_train, y_train)
     y_pred_base = baseline_model.predict(X_test)
     baseline_acc = accuracy_score(y_test, y_pred_base)
     baseline_f1 = f1_score(y_test, y_pred_base, average='macro')
     
-    print(f"Baseline {model_name}: Acc={baseline_acc:.4f}, F1={baseline_f1:.4f}")
+    logger.info(f"Baseline {model_name}: Acc={baseline_acc:.4f}, F1={baseline_f1:.4f}")
     
     ablation_results = {}
+    n_groups = len(feature_groups)
     
-    for group_name, feat_indices in feature_groups.items():
-        print(f"Ablating group: {group_name} ({len(feat_indices)} features)...")
+    if progress and progress.enabled:
+        group_iter = progress.progress(
+            list(feature_groups.items()),
+            desc=f"Ablation {model_name}",
+            unit="group"
+        )
+    else:
+        group_iter = list(feature_groups.items())
+    
+    for group_name, feat_indices in group_iter:
+        logger.info(f"Ablating group: {group_name} ({len(feat_indices)} features)...")
         
         # Create mask to exclude this group
         mask = np.ones(len(feature_names), dtype=bool)
@@ -194,7 +262,7 @@ def feature_group_ablation(model: Any, X_train: np.ndarray, y_train: np.ndarray,
             'n_features_removed': len(feat_indices)
         }
         
-        print(f"  Acc={acc:.4f} (-{drop_acc:.4f}), F1={f1:.4f} (-{drop_f1:.4f})")
+        logger.info(f"  Acc={acc:.4f} (-{drop_acc:.4f}), F1={f1:.4f} (-{drop_f1:.4f})")
     
     # Plot ablation results
     plt.figure(figsize=(10, 6))

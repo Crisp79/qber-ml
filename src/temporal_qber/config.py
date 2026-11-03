@@ -2,8 +2,8 @@
 Configuration for Temporal-QBER Attack Detection
 """
 
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, field
+from typing import List, Dict, Any
 
 # QAD Dataset classes (quantum circuit attacks, not BB84 QKD attacks)
 QAD_CLASSES = [
@@ -64,6 +64,52 @@ class TrainConfig:
     xgb_learning_rate: float = 0.1
     svm_C: float = 1.0
     svm_gamma: str = 'scale'
+    
+    # Progress and logging
+    show_progress: bool = True
+    log_level: str = "INFO"
+    experiment_name: str = ""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for experiment tracking."""
+        return {
+            'test_size': self.test_size,
+            'cv_folds': self.cv_folds,
+            'random_state': self.random_state,
+            'n_jobs': self.n_jobs,
+            'rf_n_estimators': self.rf_n_estimators,
+            'rf_max_depth': self.rf_max_depth,
+            'xgb_n_estimators': self.xgb_n_estimators,
+            'xgb_max_depth': self.xgb_max_depth,
+            'xgb_learning_rate': self.xgb_learning_rate,
+            'svm_C': self.svm_C,
+            'svm_gamma': self.svm_gamma,
+            'show_progress': self.show_progress,
+            'log_level': self.log_level,
+        }
+
+
+@dataclass
+class PipelineConfig:
+    """Complete pipeline configuration for experiment tracking."""
+    train: TrainConfig = field(default_factory=TrainConfig)
+    dataset: Dict[str, Any] = field(default_factory=dict)
+    models: List[str] = field(default_factory=lambda: ['random_forest', 'xgboost', 'svm_rbf'])
+    do_shap: bool = True
+    do_ablation: bool = True
+    models_dir: str = "models"
+    results_dir: str = "results"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'train': self.train.to_dict(),
+            'dataset': self.dataset,
+            'models': self.models,
+            'do_shap': self.do_shap,
+            'do_ablation': self.do_ablation,
+            'models_dir': self.models_dir,
+            'results_dir': self.results_dir,
+        }
 
 # Paths
 DATA_DIR = "data/qad"

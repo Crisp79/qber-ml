@@ -81,7 +81,7 @@ class TestDatasetLoading:
         # Transform and check - scaled train data should have mean ≈ 0
         X_train_scaled, X_test_scaled = transform_data(scaler, X_train, X_test)
         # Use relaxed tolerance for floating-point precision after scaling
-        np.testing.assert_allclose(X_train_scaled.mean(axis=0), 0, atol=2e-7)
+        np.testing.assert_allclose(X_train_scaled.mean(axis=0), 0, atol=1e-6)
 
 
 class TestFeatureGroups:

@@ -6,35 +6,62 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
     roc_auc_score, confusion_matrix, classification_report
 )
 import joblib
+import time
 
 from .config import QAD_CLASSES, TrainConfig
+from .logging_config import get_logger
+from .progress import ProgressManager
 
 
-def evaluate_model(model: Any, X_test: np.ndarray, y_test: np.ndarray, 
-                   class_names: List[str] = None) -> Dict[str, Any]:
+def evaluate_model(
+    model: Any, 
+    X_test: np.ndarray, 
+    y_test: np.ndarray, 
+    class_names: List[str] = None,
+    progress: Optional[ProgressManager] = None
+) -> Dict[str, Any]:
     """
     Comprehensive model evaluation.
     
     Returns:
         Dictionary with all metrics
     """
+    logger = get_logger()
+    
     if class_names is None:
         class_names = QAD_CLASSES
     
-    y_pred = model.predict(X_test)
-    y_proba = model.predict_proba(X_test) if hasattr(model, 'predict_proba') else None
+    logger.info("Evaluating model on test set...")
+    start = time.time()
     
-    # Basic metrics
-    accuracy = accuracy_score(y_test, y_pred)
-    macro_f1 = f1_score(y_test, y_pred, average='macro')
-    macro_precision = precision_score(y_test, y_pred, average='macro', zero_division=0)
-    macro_recall = recall_score(y_test, y_pred, average='macro', zero_division=0)
+    if progress and progress.enabled:
+        with progress.progress(total=3, desc="Evaluation", unit="step") as pbar:
+            y_pred = model.predict(X_test)
+            pbar.update(1)
+            y_proba = model.predict_proba(X_test) if hasattr(model, 'predict_proba') else None
+            pbar.update(1)
+            
+            # Compute metrics
+            accuracy = accuracy_score(y_test, y_pred)
+            macro_f1 = f1_score(y_test, y_pred, average='macro')
+            macro_precision = precision_score(y_test, y_pred, average='macro', zero_division=0)
+            macro_recall = recall_score(y_test, y_pred, average='macro', zero_division=0)
+            pbar.update(1)
+    else:
+        y_pred = model.predict(X_test)
+        y_proba = model.predict_proba(X_test) if hasattr(model, 'predict_proba') else None
+        
+        # Basic metrics
+        accuracy = accuracy_score(y_test, y_pred)
+        macro_f1 = f1_score(y_test, y_pred, average='macro')
+        macro_precision = precision_score(y_test, y_pred, average='macro', zero_division=0)
+        macro_recall = recall_score(y_test, y_pred, average='macro', zero_division=0)
     
     # Per-class metrics
     per_class_f1 = f1_score(y_test, y_pred, average=None, zero_division=0)
@@ -69,6 +96,12 @@ def evaluate_model(model: Any, X_test: np.ndarray, y_test: np.ndarray,
     fnr = np.sum((y_test_binary == 1) & (y_pred_binary == 0)) / np.sum(y_test_binary == 1) if np.sum(y_test_binary == 1) > 0 else 0.0
     fpr = np.sum((y_test_binary == 0) & (y_pred_binary == 1)) / np.sum(y_test_binary == 0) if np.sum(y_test_binary == 0) > 0 else 0.0
     
+    elapsed = time.time() - start
+    logger.info(f"Evaluation complete in {elapsed:.1f}s")
+    roc_auc_str = f"{roc_auc:.4f}" if roc_auc is not None else "N/A"
+    logger.info(f"  Accuracy: {accuracy:.4f} | Macro-F1: {macro_f1:.4f} | ROC-AUC: {roc_auc_str}")
+    logger.info(f"  Binary FNR: {fnr:.4f} | FPR: {fpr:.4f}")
+    
     return {
         'accuracy': accuracy,
         'macro_f1': macro_f1,
@@ -79,6 +112,7 @@ def evaluate_model(model: Any, X_test: np.ndarray, y_test: np.ndarray,
         'per_class': class_results,
         'fnr_binary': fnr,
         'fpr_binary': fpr,
+        'eval_time': elapsed,
         'classification_report': classification_report(y_test, y_pred, target_names=class_names, zero_division=0)
     }
 
@@ -86,6 +120,7 @@ def evaluate_model(model: Any, X_test: np.ndarray, y_test: np.ndarray,
 def plot_confusion_matrix(cm: np.ndarray, class_names: List[str], 
                           title: str = "Confusion Matrix", save_path: str = None):
     """Plot and optionally save confusion matrix."""
+    logger = get_logger()
     plt.figure(figsize=(10, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                 xticklabels=class_names, yticklabels=class_names)
@@ -96,13 +131,14 @@ def plot_confusion_matrix(cm: np.ndarray, class_names: List[str],
     
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"Saved confusion matrix to {save_path}")
+        logger.info(f"Saved confusion matrix to {save_path}")
     plt.close()
 
 
 def plot_per_class_f1(results: Dict[str, Dict[str, Any]], class_names: List[str],
                       save_path: str = None):
     """Plot per-class F1 scores for all models."""
+    logger = get_logger()
     n_models = len(results)
     fig, axes = plt.subplots(1, n_models, figsize=(6*n_models, 5))
     
@@ -131,7 +167,7 @@ def plot_per_class_f1(results: Dict[str, Dict[str, Any]], class_names: List[str]
     
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"Saved per-class F1 plot to {save_path}")
+        logger.info(f"Saved per-class F1 plot to {save_path}")
     plt.close()
 
 
@@ -145,11 +181,13 @@ def evaluate_baselines(X_test: np.ndarray, y_test: np.ndarray,
     Note: Requires QBER feature index in feature matrix.
     For QAD dataset, we approximate using available features.
     """
+    logger = get_logger()
+    logger.info("Evaluating baseline detectors...")
+    
     # For QAD, we don't have direct QBER. Use a proxy feature.
     # Using 'entropy' or 'normalized_entropy' as proxy for anomaly score
     if qber_feature_idx is None:
-        # Find entropy column
-        # This is a placeholder - in real use, you'd have temporal QBER
+        logger.warning("No QBER feature index provided, baselines not applicable")
         return {
             'fixed_threshold': {'accuracy': 0.0, 'fnr': 1.0, 'note': 'Requires temporal QBER feature'},
             'cusum': {'accuracy': 0.0, 'fnr': 1.0, 'note': 'Requires temporal QBER sequence'}
@@ -170,6 +208,9 @@ def evaluate_baselines(X_test: np.ndarray, y_test: np.ndarray,
     cusum_pred = cusum_detector(qber_proxy, threshold=0.11, drift=0.5)
     cusum_acc = accuracy_score(y_true_binary, cusum_pred)
     cusum_fnr = np.sum((y_true_binary == 1) & (cusum_pred == 0)) / np.sum(y_true_binary == 1) if np.sum(y_true_binary == 1) > 0 else 0.0
+    
+    logger.info(f"Fixed threshold: Acc={thresh_acc:.4f}, FNR={thresh_fnr:.4f}")
+    logger.info(f"CUSUM: Acc={cusum_acc:.4f}, FNR={cusum_fnr:.4f}")
     
     return {
         'fixed_threshold': {
@@ -244,24 +285,26 @@ def save_results(results: Dict[str, Any], output_dir: str):
     with open(Path(output_dir) / "evaluation_results.json", 'w') as f:
         json.dump(convert(results), f, indent=2)
     
-    print(f"Saved evaluation results to {output_dir}/evaluation_results.json")
+    logger = get_logger()
+    logger.info(f"Saved evaluation results to {output_dir}/evaluation_results.json")
 
 
 def print_summary(results: Dict[str, Dict[str, Any]]):
     """Print evaluation summary table."""
-    print("\n" + "="*80)
-    print("EVALUATION SUMMARY")
-    print("="*80)
-    print(f"{'Model':<20} {'Accuracy':>10} {'Macro-F1':>10} {'Macro-Prec':>10} {'Macro-Rec':>10} {'ROC-AUC':>10} {'Binary-FNR':>10}")
-    print("-"*80)
+    logger = get_logger()
+    logger.info("\n" + "="*80)
+    logger.info("EVALUATION SUMMARY")
+    logger.info("="*80)
+    logger.info(f"{'Model':<20} {'Accuracy':>10} {'Macro-F1':>10} {'Macro-Prec':>10} {'Macro-Rec':>10} {'ROC-AUC':>10} {'Binary-FNR':>10}")
+    logger.info("-"*80)
     
     for model_name, result in results.items():
         eval_result = result.get('evaluation', {})
-        print(f"{model_name:<20} "
+        logger.info(f"{model_name:<20} "
               f"{eval_result.get('accuracy', 0):>10.4f} "
               f"{eval_result.get('macro_f1', 0):>10.4f} "
               f"{eval_result.get('macro_precision', 0):>10.4f} "
               f"{eval_result.get('macro_recall', 0):>10.4f} "
               f"{eval_result.get('roc_auc_ovr', 0):>10.4f} "
               f"{eval_result.get('fnr_binary', 0):>10.4f}")
-    print("="*80)
+    logger.info("="*80)
