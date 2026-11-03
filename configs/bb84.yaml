@@ -1,0 +1,62 @@
+# BB84 Simulator Configuration
+
+simulation:
+  # Number of qubit transmissions per session
+  n_transmissions: 100000
+  
+  # Random seed for reproducibility (null for random)
+  seed: 42
+  
+# Protocol parameters
+protocol:
+  # Alice's probability of choosing Z basis (0.5 = unbiased)
+  basis_probability_z: 0.5
+  
+  # Bob's probability of choosing Z basis (0.5 = unbiased)
+  basis_probability_z: 0.5
+  
+  # Bob's photon detection efficiency [0, 1]
+  detection_efficiency: 1.0
+  
+  # Bob's dark count probability per time window [0, 1]
+  dark_count_prob: 0.0
+
+# Channel configuration
+channel:
+  # Channel type: ideal, depolarizing, phase_flip, amplitude_damping, bit_flip
+  type: ideal
+  
+  # Channel-specific parameters (used based on type)
+  # Depolarizing channel
+  depolarizing_prob: 0.0
+  
+  # Phase flip channel
+  phase_flip_prob: 0.0
+  
+  # Amplitude damping channel
+  damping_gamma: 0.0
+  
+  # Bit flip channel
+  bit_flip_prob: 0.0
+  
+  # Photon loss probability [0, 1]
+  loss_probability: 0.0
+
+# Session configuration
+session:
+  # Temporal window size in bits (paper's W=50)
+  window_size: 50
+  
+  # Minimum sifted bits per window for valid QBER estimate
+  min_sifted_bits: 200
+
+# Output configuration
+output:
+  # Save raw simulation data
+  save_raw: false
+  
+  # Save processed features
+  save_features: false
+  
+  # Output directory
+  directory: "results/bb84"

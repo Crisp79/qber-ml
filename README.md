@@ -19,6 +19,24 @@ This repository implements the complete ML pipeline for quantum attack detection
 - ✅ **Detailed cross-validation reporting per fold**
 - ✅ **Experiment tracking with JSON metadata**
 
+### BB84 Simulator (Phase 1 - Implemented)
+- ✅ Ideal BB84 protocol with Alice, Bob, and quantum channel
+- ✅ Configurable quantum channel noise models:
+  - Ideal channel (no noise)
+  - Depolarizing channel (random Pauli X/Y/Z errors)
+  - Phase-flip channel (Z errors)
+  - Bit-flip channel (X errors)
+  - Amplitude damping channel (energy loss)
+- ✅ Configurable photon loss and detector imperfections:
+  - Photon loss probability
+  - Detection efficiency
+  - Dark count probability
+- ✅ Eve's intercept-resend attack:
+  - Full intercept-resend (Eve intercepts all transmissions)
+  - Partial intercept-resend (configurable interception probability)
+- ✅ Reproducible simulations with independent seed derivation
+- ✅ CLI with configuration file support
+
 ### Paper's Target (future work)
 - BB84 simulator with 7 eavesdropping attacks
 - Temporal QBER extraction (W=50 bit windows)
@@ -299,18 +317,79 @@ Tests verify:
 
 ## Future Work
 
-1. **BB84 Simulator** (`bb84.py`, `channels.py`, `attacks.py`)
-   - Implement 7 attack models: Intercept-Resend, PNS, Beam Splitting, Time-Shift, Trojan Horse, Quantum Cloning, Fake State
-   - Configurable channel noise, photon loss, detector efficiency
+1. **BB84 Simulator - Phase 2** (`attacks.py`, `temporal/` modules)
+   - Implement remaining 6 attack models: PNS, Beam Splitting, Time-Shift, Trojan Horse, Quantum Cloning, Fake State
+   - Temporal QBER pipeline (`temporal/qber.py`) with W=50 windowing
+   - 63 physics-informed temporal-QBER features
 
-2. **Temporal QBER Pipeline** (`qber.py`)
-   - Basis reconciliation → sifted key → QBER sequence (W=50)
+2. **Dataset Generation** (`datasets/bb84.py`)
+   - Generate 24,000 balanced sessions with 63 temporal-QBER features
+   - Configurable attack mixtures and channel conditions
 
-3. **Dataset Generation** (`dataset.py`)
-   - Generate 24,000 balanced sessions with 63 features
-
-4. **Reproduce Paper Results**
+3. **Reproduce Paper Results**
    - Target: 88.01% accuracy, 0.8803 macro-F1 (XGBoost, 10 seeds)
+
+### BB84 Simulator - Phase 1 Summary (Completed)
+
+The following BB84 simulator components are now implemented and tested:
+
+**Quantum Channel Models:**
+- **Ideal Channel**: No noise, no loss - baseline reference
+- **Depolarizing Channel**: Random Pauli X/Y/Z errors with probability p
+- **Phase-Flip Channel**: Z errors only (preserves Z-basis states)
+- **Bit-Flip Channel**: X errors only (flips |0⟩↔|1⟩)
+- **Amplitude Damping Channel**: Energy loss |1⟩→|0⟩ with probability γ
+- **Photon Loss**: Configurable photon transmission probability
+
+**Detector Imperfections:**
+- **Detection Efficiency**: Probability of detecting an arriving photon
+- **Dark Counts**: Random detection events independent of photon arrival
+
+**Eve's Intercept-Resend Attack:**
+- **Full Intercept-Resend**: Eve intercepts all transmissions
+  - Theoretical QBER: 25% (with unbiased bases)
+- **Partial Intercept-Resend**: Eve intercepts fraction p of transmissions
+  - Theoretical QBER: p/4 (with unbiased bases)
+  - Validated: 50% interception → ~12.5% QBER, 25% interception → ~6.25% QBER
+
+**Configuration (configs/bb84.yaml):**
+```yaml
+channel:
+  type: depolarizing      # ideal, depolarizing, phase_flip, bit_flip, amplitude_damping
+  depolarizing_prob: 0.01
+  bit_flip_prob: 0.0
+  phase_flip_prob: 0.0
+  damping_gamma: 0.0
+  loss_probability: 0.0
+
+protocol:
+  basis_probability_z: 0.5
+  detection_efficiency: 1.0
+  dark_count_prob: 0.0
+
+attacks:
+  intercept_resend:
+    enabled: true
+    interception_probability: 1.0    # 1.0 = full, 0.5 = partial
+```
+
+**CLI Usage:**
+```bash
+# Full intercept-resend attack
+uv run python scripts/simulate_bb84.py --n-transmissions 10000 --attack-type intercept_resend
+
+# Partial intercept-resend (50% interception)
+uv run python scripts/simulate_bb84.py --n-transmissions 10000 --attack-type partial_intercept_resend --attack-param 0.5
+
+# With channel noise and loss
+uv run python scripts/simulate_bb84.py --n-transmissions 10000 --channel-type depolarizing --channel-param 0.1 --loss-prob 0.1
+
+# With detector imperfections
+uv run python scripts/simulate_bb84.py --n-transmissions 10000 --detection-efficiency 0.9 --dark-count-prob 0.01
+
+# Using YAML config
+uv run python scripts/simulate_bb84.py --config configs/bb84.yaml
+```
 
 ## License
 

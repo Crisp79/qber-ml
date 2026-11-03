@@ -1,0 +1,176 @@
+"""
+Intercept-resend attack implementation.
+
+Eve intercepts Alice's quantum state, measures it in a randomly chosen basis,
+and sends a new state to Bob based on her measurement result.
+"""
+
+import numpy as np
+from typing import Optional, Dict, Any
+from dataclasses import dataclass
+
+from .base import BaseAttack, NoAttack, AttackResult
+from ..alice import Basis, Bit, BB84_STATES, measure_state_in_basis, sample_measurement
+
+
+@dataclass
+class InterceptResendResult(AttackResult):
+    """Result of an intercept-resend attack on a single transmission."""
+    eve_basis: Optional[int]  # Eve's chosen basis (0=Z, 1=X)
+    eve_outcome: Optional[int]  # Eve's measurement outcome
+    original_state: np.ndarray
+    transmitted_state: np.ndarray  # State sent to Bob (Eve's prepared state)
+    eve_info: Dict[str, Any]
+
+
+class InterceptResendAttack(BaseAttack):
+    """
+    Full intercept-resend attack.
+    
+    Eve intercepts each qubit, measures it in a randomly chosen basis,
+    and sends a new qubit to Bob based on her measurement result.
+    """
+    
+    def __init__(self, seed: Optional[int] = None):
+        super().__init__(seed)
+        # Eve chooses Z basis with probability 0.5 (unbiased)
+        self.p_z = 0.5
+    
+    def set_basis_probability(self, p_z: float):
+        """Set Eve's probability of choosing Z basis."""
+        if not 0 <= p_z <= 1:
+            raise ValueError(f"p_z must be in [0, 1], got {p_z}")
+        self.p_z = p_z
+    
+    def _choose_basis(self) -> int:
+        """Eve randomly chooses a measurement basis."""
+        return 0 if self.rng.random() < self.p_z else 1
+    
+    def attack(self, state: np.ndarray, alice_basis: int, alice_bit: int) -> AttackResult:
+        """
+        Perform intercept-resend attack on a single transmission.
+        
+        Eve:
+        1. Chooses a random basis
+        2. Measures Alice's state in that basis
+        3. Prepares a new state based on her measurement
+        4. Sends the new state to Bob
+        """
+        # Eve chooses a basis
+        eve_basis = self._choose_basis()
+        
+        # Eve measures the state in her chosen basis
+        prob_0, prob_1 = self._measure_state_in_basis(state, eve_basis)
+        eve_outcome = 0 if self.rng.random() < prob_0 else 1
+        
+        # Eve prepares a new state based on her measurement
+        transmitted_state = self._prepare_state(eve_basis, eve_outcome)
+        
+        return InterceptResendResult(
+            intercepted=True,
+            eve_basis=eve_basis,
+            eve_outcome=eve_outcome,
+            original_state=state.copy(),
+            transmitted_state=transmitted_state,
+            eve_info={
+                "eve_basis": eve_basis,
+                "eve_outcome": eve_outcome,
+            }
+        )
+    
+    def _measure_state_in_basis(self, state: np.ndarray, basis: int) -> tuple[float, float]:
+        """Calculate measurement probabilities for a state in a given basis."""
+        if basis == Basis.Z:
+            prob_0 = np.abs(state[0])**2
+            prob_1 = np.abs(state[1])**2
+        else:  # Basis.X
+            plus = BB84_STATES[(Basis.X, Bit.ZERO)]
+            minus = BB84_STATES[(Basis.X, Bit.ONE)]
+            prob_0 = np.abs(np.vdot(plus, state))**2  # |<+|state>|^2
+            prob_1 = np.abs(np.vdot(minus, state))**2  # |<-|state>|^2
+        
+        return float(prob_0), float(prob_1)
+    
+    def _prepare_state(self, basis: int, bit: int) -> np.ndarray:
+        """Prepare a new quantum state based on Eve's measurement."""
+        return BB84_STATES[(basis, bit)].copy()
+
+
+class PartialInterceptResendAttack(InterceptResendAttack):
+    """
+    Partial intercept-resend attack.
+    
+    Eve intercepts only a fraction of the transmissions.
+    """
+    
+    def __init__(
+        self, 
+        interception_prob: float = 0.5, 
+        seed: Optional[int] = None
+    ):
+        """
+        Initialize partial intercept-resend attack.
+        
+        Args:
+            interception_prob: Probability that Eve intercepts each transmission (0-1)
+            seed: Random seed for reproducibility
+        """
+        super().__init__(seed)
+        if not 0 <= interception_prob <= 1:
+            raise ValueError(f"interception_prob must be in [0, 1], got {interception_prob}")
+        self.interception_prob = interception_prob
+    
+    def attack(self, state: np.ndarray, alice_basis: int, alice_bit: int) -> AttackResult:
+        """
+        Perform intercept-resend attack with configurable probability.
+        
+        With probability interception_prob, Eve intercepts and resends.
+        Otherwise, the original state passes through unchanged.
+        """
+        # Decide whether to intercept this transmission
+        if self.rng.random() < self.interception_prob:
+            # Perform full intercept-resend
+            return super().attack(state, alice_basis, alice_bit)
+        else:
+            # No interception - pass state through unchanged
+            return InterceptResendResult(
+                intercepted=False,
+                eve_basis=None,
+                eve_outcome=None,
+                original_state=state.copy(),
+                transmitted_state=state.copy(),
+                eve_info={"intercepted": False}
+            )
+
+
+def create_attack(
+    attack_type: str,
+    seed: Optional[int] = None,
+    **kwargs
+) -> BaseAttack:
+    """
+    Factory function to create attack instances.
+    
+    Args:
+        attack_type: Type of attack ('none', 'intercept_resend', 'partial_intercept_resend')
+        seed: Random seed
+        **kwargs: Attack-specific parameters
+        
+    Returns:
+        BaseAttack instance
+    """
+    attack_type = attack_type.lower()
+    
+    if attack_type == 'none':
+        return NoAttack(seed=seed)
+    elif attack_type == 'intercept_resend':
+        return InterceptResendAttack(seed=seed)
+    elif attack_type == 'partial_intercept_resend':
+        interception_prob = kwargs.get('interception_prob', 0.5)
+        return PartialInterceptResendAttack(
+            interception_prob=interception_prob, 
+            seed=seed
+        )
+    else:
+        raise ValueError(f"Unknown attack type: {attack_type}. "
+                         f"Available: none, intercept_resend, partial_intercept_resend")
