@@ -7,6 +7,7 @@ import sys
 import numpy as np
 from pathlib import Path
 import time
+from typing import Optional, List
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -24,7 +25,7 @@ from temporal_qber.explain import (
     explain_model_shap, feature_group_ablation, define_qad_feature_groups, 
     save_shap_results
 )
-from temporal_qber.config import QAD_CLASSES, PipelineConfig
+from temporal_qber.config import QAD_CLASSES, PipelineConfig, AVAILABLE_MODELS
 from temporal_qber.logging_config import setup_logging, get_logger, log_experiment_config
 from temporal_qber.progress import ProgressManager, create_progress_manager
 from temporal_qber.experiment import ExperimentTracker, ExperimentConfig, create_experiment_config_from_args
@@ -41,8 +42,17 @@ def run_pipeline(
     show_progress: bool = True,
     experiment_name: str = "",
     disable_console_log: bool = False,
+    models: Optional[List[str]] = None,
 ):
     """Run the complete ML pipeline with logging, progress tracking, and experiment tracking."""
+    
+    # Validate model names
+    if models is not None:
+        for m in models:
+            if m not in AVAILABLE_MODELS:
+                raise ValueError(f"Unknown model: {m}. Available: {AVAILABLE_MODELS}")
+    else:
+        models = AVAILABLE_MODELS.copy()
     
     # Setup logging
     experiment_id = experiment_name or time.strftime("%Y%m%d_%H%M%S")
@@ -97,7 +107,7 @@ def run_pipeline(
         logger.info("\n[5/7] Training models...")
         train_results = train_all_models(
             X_train_scaled, y_train, X_test_scaled, y_test, 
-            config, progress=progress
+            config, progress=progress, model_names=models
         )
         
         # 6. Evaluate models
@@ -118,6 +128,7 @@ def run_pipeline(
             class_dist=class_dist
         )
         exp_config.model_hyperparameters = config.to_dict()
+        exp_config.models = models  # Track which models were trained
         tracker.start_experiment(exp_config)
         
         for model_name, result in train_results.items():
@@ -279,12 +290,20 @@ if __name__ == "__main__":
     parser.add_argument('--experiment-name', default='', help='Custom experiment name/ID')
     parser.add_argument('--quiet', action='store_true', help='Disable console logging (file only)')
     parser.add_argument('--verbose', action='store_true', help='Enable DEBUG logging')
+    parser.add_argument('--models', default=None, 
+                        help=f'Comma-separated list of models to train (default: all). Available: {", ".join(AVAILABLE_MODELS)}')
     
     args = parser.parse_args()
     
     if args.demo:
         run_demo(args.models_dir)
     else:
+        # Parse models argument
+        if args.models:
+            models = [m.strip() for m in args.models.split(',')]
+        else:
+            models = None
+        
         log_level = 'DEBUG' if args.verbose else args.log_level
         run_pipeline(
             n_samples=args.n_samples,
@@ -296,5 +315,6 @@ if __name__ == "__main__":
             log_level=log_level,
             show_progress=not args.disable_progress,
             experiment_name=args.experiment_name,
-            disable_console_log=args.quiet
+            disable_console_log=args.quiet,
+            models=models
         )

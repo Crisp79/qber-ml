@@ -48,6 +48,9 @@ QAD_FEATURE_COLS = [
 TEMPORAL_WINDOW_SIZE = 50  # bits per window
 MIN_SIFTED_BITS = 200  # minimum bits for valid session
 
+# Available models
+AVAILABLE_MODELS = ['random_forest', 'xgboost', 'svm_rbf']
+
 # Training configuration
 @dataclass
 class TrainConfig:

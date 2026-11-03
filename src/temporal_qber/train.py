@@ -16,7 +16,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from xgboost import XGBClassifier
 import time
 
-from .config import TrainConfig, QAD_CLASSES
+from .config import TrainConfig, QAD_CLASSES, AVAILABLE_MODELS
 from .logging_config import get_logger
 from .progress import (
     ProgressManager, 
@@ -31,10 +31,25 @@ def compute_balanced_sample_weights(y: np.ndarray) -> np.ndarray:
     return compute_sample_weight(class_weight='balanced', y=y)
 
 
-def create_models(config: TrainConfig) -> Dict[str, Any]:
-    """Create the three classifiers with configured hyperparameters."""
+def create_models(config: TrainConfig, model_names: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Create the three classifiers with configured hyperparameters.
     
-    models = {
+    Args:
+        config: Training configuration
+        model_names: Optional list of model names to create. If None, creates all available models.
+    
+    Returns:
+        Dictionary of model instances
+    """
+    if model_names is None:
+        model_names = AVAILABLE_MODELS
+    
+    # Validate model names
+    for name in model_names:
+        if name not in AVAILABLE_MODELS:
+            raise ValueError(f"Unknown model: {name}. Available: {AVAILABLE_MODELS}")
+    
+    all_models = {
         'random_forest': RandomForestClassifier(
             n_estimators=config.rf_n_estimators,
             max_depth=config.rf_max_depth,
@@ -64,7 +79,7 @@ def create_models(config: TrainConfig) -> Dict[str, Any]:
         ])
     }
     
-    return models
+    return {name: all_models[name] for name in model_names}
 
 
 def train_model(
@@ -216,16 +231,23 @@ def train_all_models(
     X_test: np.ndarray, 
     y_test: np.ndarray,
     config: TrainConfig,
-    progress: Optional[ProgressManager] = None
+    progress: Optional[ProgressManager] = None,
+    model_names: Optional[List[str]] = None
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Train all three models and evaluate on test set.
+    Train specified models and evaluate on test set.
+    
+    Args:
+        X_train, y_train, X_test, y_test: Data splits
+        config: Training configuration
+        progress: Optional progress manager
+        model_names: List of model names to train. If None, trains all available models.
     
     Returns:
         Dictionary with model results
     """
     logger = get_logger()
-    models = create_models(config)
+    models = create_models(config, model_names)
     results = {}
     
     # Compute balanced sample weights for XGBoost

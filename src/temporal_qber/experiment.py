@@ -28,6 +28,7 @@ class ExperimentConfig:
     cv_config: Dict[str, Any] = field(default_factory=dict)
     random_seeds: Dict[str, int] = field(default_factory=dict)
     model_hyperparameters: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    models: List[str] = field(default_factory=list)
 
 
 @dataclass
