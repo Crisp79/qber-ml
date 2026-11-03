@@ -51,6 +51,56 @@ MIN_SIFTED_BITS = 200  # minimum bits for valid session
 # Available models
 AVAILABLE_MODELS = ['random_forest', 'xgboost', 'svm_rbf']
 
+# BB84 Simulator configuration
+@dataclass
+class BB84SimConfig:
+    """BB84 simulator configuration."""
+    n_transmissions: int = 100000
+    seed: int = 42
+    alice_p_z: float = 0.5
+    bob_p_z: float = 0.5
+    detection_efficiency: float = 1.0
+    channel_type: str = "ideal"
+    channel_params: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'n_transmissions': self.n_transmissions,
+            'seed': self.seed,
+            'alice_p_z': self.alice_p_z,
+            'bob_p_z': self.bob_p_z,
+            'detection_efficiency': self.detection_efficiency,
+            'channel_type': self.channel_type,
+            'channel_params': self.channel_params,
+        }
+
+# BB84 Session configuration
+@dataclass
+class BB84SessionConfig:
+    """BB84 session configuration with temporal windowing."""
+    n_transmissions: int = 100000
+    window_size: int = 50
+    min_sifted_bits: int = 200
+    seed: int = 42
+    alice_p_z: float = 0.5
+    bob_p_z: float = 0.5
+    detection_efficiency: float = 1.0
+    channel_type: str = "ideal"
+    channel_params: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'n_transmissions': self.n_transmissions,
+            'window_size': self.window_size,
+            'min_sifted_bits': self.min_sifted_bits,
+            'seed': self.seed,
+            'alice_p_z': self.alice_p_z,
+            'bob_p_z': self.bob_p_z,
+            'detection_efficiency': self.detection_efficiency,
+            'channel_type': self.channel_type,
+            'channel_params': self.channel_params,
+        }
+
 # Training configuration
 @dataclass
 class TrainConfig:
