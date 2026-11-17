@@ -91,8 +91,9 @@ Status meanings: **DONE** = verified in the current repository; **IN PROGRESS** 
 
 ## Current Priority
 
-1. **Fix QAD preprocessing leakage**: Move `StandardScaler` inside CV folds (use `Pipeline` for all models) — this is the highest-impact correctness fix.
-2. **Run QAD ablation without attack-specific parameters**: Quantify how much performance drops when simulator metadata is removed.
-3. **Verify PDF report builds cleanly** on Windows (MiKTeX path in `generate_report.py` may need adjustment).
-4. **Implement remaining BB84 attacks** (PNS, Beam Splitting, Time-Shift, Trojan Horse, Quantum Cloning, Fake State).
-5. **Generate BB84 simulation dataset** and run temporal-QBER feature extraction + ML evaluation.
+1. **Fix QAD preprocessing leakage** ✅ DONE — All models wrapped in `Pipeline(StandardScaler, Model)` with per-fold scaling.
+2. **Run QAD ablation without attack-specific parameters** ✅ DONE — Quantified 33-43% accuracy drops; confirmed shortcut learning.
+3. **Implement BB84 attacks 1-3** (PNS, Beam Splitting, Time-Shift) — next BB84 milestones.
+4. **Generate BB84 simulation dataset** — multi-session, multi-attack, 63 temporal features per session.
+5. **Implement remaining BB84 attacks** (Trojan Horse, Quantum Cloning, Fake State).
+6. **Build report PDF** — moved to last; verify MiKTeX path and bibliography.

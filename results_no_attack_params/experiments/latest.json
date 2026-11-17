@@ -1,0 +1,437 @@
+{
+  "config": {
+    "experiment_id": "no_attack_params_20261118_014424",
+    "timestamp": "2026-11-18T01:45:22.874428",
+    "git_commit": "7aea9fe0",
+    "dataset_name": "QAD",
+    "dataset_variant": "balanced",
+    "n_samples": 10000,
+    "n_features": 22,
+    "class_distribution": {
+      "clean": 3109,
+      "swap_injection": 971,
+      "gate_insertion": 1011,
+      "depolarizing_noise": 1000,
+      "amplitude_damping": 955,
+      "measurement_tampering": 1004,
+      "pulse_level_attack": 984,
+      "thermal_relaxation": 966
+    },
+    "train_test_split": {
+      "test_size": 0.2,
+      "stratified": true
+    },
+    "cv_config": {
+      "folds": 5,
+      "shuffle": true
+    },
+    "random_seeds": {
+      "data_split": 42,
+      "models": 42,
+      "cv": 42
+    },
+    "model_hyperparameters": {
+      "test_size": 0.2,
+      "cv_folds": 5,
+      "random_state": 42,
+      "n_jobs": -1,
+      "rf_n_estimators": 200,
+      "rf_max_depth": 20,
+      "xgb_n_estimators": 200,
+      "xgb_max_depth": 10,
+      "xgb_learning_rate": 0.1,
+      "svm_C": 1.0,
+      "svm_gamma": "scale",
+      "show_progress": true,
+      "log_level": "INFO"
+    },
+    "models": [
+      "random_forest",
+      "xgboost",
+      "svm_rbf"
+    ]
+  },
+  "models": {
+    "random_forest": {
+      "model_name": "random_forest",
+      "train_time": 0.3969738483428955,
+      "eval_time": 0.05087685585021973,
+      "test_accuracy": 0.52,
+      "cv_results": {
+        "cv_accuracy_mean": 0.52075,
+        "cv_accuracy_std": 0.007008922884438064,
+        "cv_f1_macro_mean": 0.5149123419569165,
+        "cv_f1_macro_std": 0.006972833479230893,
+        "cv_scores": [
+          0.5275,
+          0.508125,
+          0.526875,
+          0.519375,
+          0.521875
+        ],
+        "cv_f1_scores": [
+          0.5222056829795657,
+          0.5019688961673909,
+          0.5173970541421316,
+          0.518860706411818,
+          0.5141293700836764
+        ]
+      },
+      "fold_metrics": [
+        {
+          "fold": 1,
+          "accuracy": 0.5275,
+          "macro_f1": 0.5222056829795657,
+          "train_time": 0.3788795471191406,
+          "eval_time": 0.05077981948852539
+        },
+        {
+          "fold": 2,
+          "accuracy": 0.508125,
+          "macro_f1": 0.5019688961673909,
+          "train_time": 0.36906981468200684,
+          "eval_time": 0.052050113677978516
+        },
+        {
+          "fold": 3,
+          "accuracy": 0.526875,
+          "macro_f1": 0.5173970541421316,
+          "train_time": 0.42881107330322266,
+          "eval_time": 0.06612157821655273
+        },
+        {
+          "fold": 4,
+          "accuracy": 0.519375,
+          "macro_f1": 0.518860706411818,
+          "train_time": 0.37882518768310547,
+          "eval_time": 0.06313753128051758
+        },
+        {
+          "fold": 5,
+          "accuracy": 0.521875,
+          "macro_f1": 0.5141293700836764,
+          "train_time": 0.38605523109436035,
+          "eval_time": 0.061501502990722656
+        }
+      ],
+      "aggregate_metrics": {
+        "test_accuracy": 0.52,
+        "macro_f1": 0.5169877766777188,
+        "macro_precision": 0.5176682562767831,
+        "macro_recall": 0.5197393173140816,
+        "roc_auc_ovr": 0.8727723899777918,
+        "fnr_binary": 0.14876632801161102,
+        "fpr_binary": 0.4855305466237942
+      },
+      "model_path": "models_no_attack_params/random_forest.joblib",
+      "plots": [
+        "results_no_attack_params/random_forest_confusion_matrix.png",
+        "results_no_attack_params/random_forest_shap_summary.png",
+        "results_no_attack_params/random_forest_shap_beeswarm.png",
+        "results_no_attack_params/random_forest_ablation.png"
+      ],
+      "shap_results": {
+        "top_features": [
+          [
+            "n_single_qubit_gates",
+            0.041315870579666
+          ],
+          [
+            "circuit_depth",
+            0.03383509837964373
+          ],
+          [
+            "normalized_entropy",
+            0.027916247404421356
+          ],
+          [
+            "n_gates_total",
+            0.021010579120296892
+          ],
+          [
+            "n_two_qubit_gates",
+            0.02009181930379355
+          ],
+          [
+            "outcome_ratio",
+            0.013141861509205691
+          ],
+          [
+            "prob_cv",
+            0.012106124061068743
+          ],
+          [
+            "circuit_VQC",
+            0.01118977986141191
+          ],
+          [
+            "prob_range",
+            0.010592848302700927
+          ],
+          [
+            "entropy",
+            0.010549364319235081
+          ]
+        ],
+        "n_features": 22
+      },
+      "ablation_results": {
+        "baseline_accuracy": 0.52,
+        "baseline_f1": 0.5169877766777188,
+        "groups": [
+          "circuit_structure",
+          "output_distribution",
+          "entropy_features",
+          "purity_diversity",
+          "timing"
+        ]
+      },
+      "status": "completed",
+      "error": null
+    },
+    "xgboost": {
+      "model_name": "xgboost",
+      "train_time": 1.9594433307647705,
+      "eval_time": 0.00852203369140625,
+      "test_accuracy": 0.5495,
+      "cv_results": {
+        "cv_accuracy_mean": 0.559375,
+        "cv_accuracy_std": 0.005288548950326564,
+        "cv_f1_macro_mean": 0.5357922190607406,
+        "cv_f1_macro_std": 0.005972807264254284,
+        "cv_scores": [
+          0.5575,
+          0.555,
+          0.553125,
+          0.565625,
+          0.565625
+        ],
+        "cv_f1_scores": [
+          0.5297622137672768,
+          0.5331181175288444,
+          0.5320173674159578,
+          0.5374084611697463,
+          0.5466549354218775
+        ]
+      },
+      "fold_metrics": [
+        {
+          "fold": 1,
+          "accuracy": 0.5575,
+          "macro_f1": 0.5297622137672768,
+          "train_time": 1.705153465270996,
+          "eval_time": 0.010043621063232422
+        },
+        {
+          "fold": 2,
+          "accuracy": 0.555,
+          "macro_f1": 0.5331181175288444,
+          "train_time": 1.7668545246124268,
+          "eval_time": 0.011017799377441406
+        },
+        {
+          "fold": 3,
+          "accuracy": 0.553125,
+          "macro_f1": 0.5320173674159578,
+          "train_time": 1.7690467834472656,
+          "eval_time": 0.010520696640014648
+        },
+        {
+          "fold": 4,
+          "accuracy": 0.565625,
+          "macro_f1": 0.5374084611697463,
+          "train_time": 1.771458387374878,
+          "eval_time": 0.010216474533081055
+        },
+        {
+          "fold": 5,
+          "accuracy": 0.565625,
+          "macro_f1": 0.5466549354218775,
+          "train_time": 1.7601945400238037,
+          "eval_time": 0.010730266571044922
+        }
+      ],
+      "aggregate_metrics": {
+        "test_accuracy": 0.5495,
+        "macro_f1": 0.5231691177972312,
+        "macro_precision": 0.5248980854099128,
+        "macro_recall": 0.5222057455393261,
+        "roc_auc_ovr": 0.8775549265330115,
+        "fnr_binary": 0.18940493468795355,
+        "fpr_binary": 0.35691318327974275
+      },
+      "model_path": "models_no_attack_params/xgboost.joblib",
+      "plots": [
+        "results_no_attack_params/xgboost_confusion_matrix.png",
+        "results_no_attack_params/xgboost_shap_summary.png",
+        "results_no_attack_params/xgboost_shap_beeswarm.png",
+        "results_no_attack_params/xgboost_ablation.png"
+      ],
+      "shap_results": {
+        "top_features": [
+          [
+            "outcome_ratio",
+            0.9039514660835266
+          ],
+          [
+            "n_single_qubit_gates",
+            0.7171683311462402
+          ],
+          [
+            "circuit_depth",
+            0.6833281517028809
+          ],
+          [
+            "prob_cv",
+            0.5092232823371887
+          ],
+          [
+            "n_two_qubit_gates",
+            0.45444759726524353
+          ],
+          [
+            "entropy",
+            0.4197300970554352
+          ],
+          [
+            "normalized_entropy",
+            0.40548744797706604
+          ],
+          [
+            "circuit_VQC",
+            0.3679601848125458
+          ],
+          [
+            "exec_time_sec",
+            0.18065983057022095
+          ],
+          [
+            "gate_density",
+            0.1739543080329895
+          ]
+        ],
+        "n_features": 22
+      },
+      "ablation_results": {
+        "baseline_accuracy": 0.592,
+        "baseline_f1": 0.5310458160355267,
+        "groups": [
+          "circuit_structure",
+          "output_distribution",
+          "entropy_features",
+          "purity_diversity",
+          "timing"
+        ]
+      },
+      "status": "completed",
+      "error": null
+    },
+    "svm_rbf": {
+      "model_name": "svm_rbf",
+      "train_time": 9.387346506118774,
+      "eval_time": 0.7756738662719727,
+      "test_accuracy": 0.4545,
+      "cv_results": {
+        "cv_accuracy_mean": 0.442125,
+        "cv_accuracy_std": 0.0083815273071201,
+        "cv_f1_macro_mean": 0.44347080361521113,
+        "cv_f1_macro_std": 0.010870166393186269,
+        "cv_scores": [
+          0.445,
+          0.4375,
+          0.4325,
+          0.43875,
+          0.456875
+        ],
+        "cv_f1_scores": [
+          0.4540351137464427,
+          0.43795256199134197,
+          0.4307233855395786,
+          0.43599463224235624,
+          0.45864832455633586
+        ]
+      },
+      "fold_metrics": [
+        {
+          "fold": 1,
+          "accuracy": 0.445,
+          "macro_f1": 0.4540351137464427,
+          "train_time": 5.919349193572998,
+          "eval_time": 0.5036671161651611
+        },
+        {
+          "fold": 2,
+          "accuracy": 0.4375,
+          "macro_f1": 0.43795256199134197,
+          "train_time": 5.921009063720703,
+          "eval_time": 0.49599719047546387
+        },
+        {
+          "fold": 3,
+          "accuracy": 0.4325,
+          "macro_f1": 0.4307233855395786,
+          "train_time": 5.9642722606658936,
+          "eval_time": 0.5041677951812744
+        },
+        {
+          "fold": 4,
+          "accuracy": 0.43875,
+          "macro_f1": 0.43599463224235624,
+          "train_time": 5.972813606262207,
+          "eval_time": 0.5039525032043457
+        },
+        {
+          "fold": 5,
+          "accuracy": 0.456875,
+          "macro_f1": 0.45864832455633586,
+          "train_time": 6.127150297164917,
+          "eval_time": 0.49360108375549316
+        }
+      ],
+      "aggregate_metrics": {
+        "test_accuracy": 0.4545,
+        "macro_f1": 0.4560727012744642,
+        "macro_precision": 0.4710229358942798,
+        "macro_recall": 0.4809215795231984,
+        "roc_auc_ovr": 0.855144276788024,
+        "fnr_binary": 0.08127721335268505,
+        "fpr_binary": 0.6463022508038585
+      },
+      "model_path": "models_no_attack_params/svm_rbf.joblib",
+      "plots": [
+        "results_no_attack_params/svm_rbf_confusion_matrix.png",
+        "results_no_attack_params/svm_rbf_ablation.png"
+      ],
+      "shap_results": null,
+      "ablation_results": {
+        "baseline_accuracy": 0.4545,
+        "baseline_f1": 0.4560727012744642,
+        "groups": [
+          "circuit_structure",
+          "output_distribution",
+          "entropy_features",
+          "purity_diversity",
+          "timing"
+        ]
+      },
+      "status": "completed",
+      "error": null
+    }
+  },
+  "baselines": {
+    "fixed_threshold": {
+      "accuracy": 0.0,
+      "fnr": 1.0,
+      "note": "Requires temporal QBER feature"
+    },
+    "cusum": {
+      "accuracy": 0.0,
+      "fnr": 1.0,
+      "note": "Requires temporal QBER sequence"
+    }
+  },
+  "total_duration": 200.3028302192688,
+  "status": "completed",
+  "error": null,
+  "completed_at": "2026-11-18T01:47:44.900246"
+}
