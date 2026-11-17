@@ -80,6 +80,7 @@ class BB84SessionConfig:
     """BB84 session configuration with temporal windowing."""
     n_transmissions: int = 100000
     window_size: int = 50
+    stride: int = 50  # Stride for temporal windows (None = window_size for non-overlapping)
     min_sifted_bits: int = 200
     seed: int = 42
     alice_p_z: float = 0.5
@@ -92,6 +93,7 @@ class BB84SessionConfig:
         return {
             'n_transmissions': self.n_transmissions,
             'window_size': self.window_size,
+            'stride': self.stride,
             'min_sifted_bits': self.min_sifted_bits,
             'seed': self.seed,
             'alice_p_z': self.alice_p_z,

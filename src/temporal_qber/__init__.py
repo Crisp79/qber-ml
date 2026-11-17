@@ -82,6 +82,7 @@ from .simulator import (
     DepolarizingChannel,
     PhaseFlipChannel,
     AmplitudeDampingChannel,
+    BitFlipChannel,
     create_channel,
     BB84Protocol,
     BB84Result,
@@ -89,6 +90,24 @@ from .simulator import (
     SessionConfig,
     SessionResult,
     run_session,
+)
+
+# Temporal QBER modules
+from .temporal import (
+    WindowConfig,
+    WindowMode,
+    WindowResult,
+    create_windows,
+    create_windows_from_session,
+    calculate_window_qber,
+    calculate_window_qber_batch,
+    calculate_session_qber,
+    calculate_qber_statistics,
+    detect_significant_changes,
+    calculate_trend_features,
+    extract_temporal_qber_features,
+    TEMPORAL_QBER_FEATURES,
+    TEMPORAL_QBER_FEATURE_GROUPS,
 )
 
 # Dataset modules
@@ -164,6 +183,7 @@ __all__ = [
     "DepolarizingChannel",
     "PhaseFlipChannel",
     "AmplitudeDampingChannel",
+    "BitFlipChannel",
     "create_channel",
     "BB84Protocol",
     "BB84Result",
@@ -171,6 +191,21 @@ __all__ = [
     "SessionConfig",
     "SessionResult",
     "run_session",
+    # Temporal QBER
+    "WindowConfig",
+    "WindowMode",
+    "WindowResult",
+    "create_windows",
+    "create_windows_from_session",
+    "calculate_window_qber",
+    "calculate_window_qber_batch",
+    "calculate_session_qber",
+    "calculate_qber_statistics",
+    "detect_significant_changes",
+    "calculate_trend_features",
+    "extract_temporal_qber_features",
+    "TEMPORAL_QBER_FEATURES",
+    "TEMPORAL_QBER_FEATURE_GROUPS",
     # Datasets
     "generate_bb84_dataset",
     "load_bb84_dataset",

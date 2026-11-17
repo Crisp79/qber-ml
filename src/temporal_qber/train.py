@@ -34,12 +34,15 @@ def compute_balanced_sample_weights(y: np.ndarray) -> np.ndarray:
 def create_models(config: TrainConfig, model_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """Create the three classifiers with configured hyperparameters.
     
+    All models are wrapped in a Pipeline with StandardScaler to ensure
+    preprocessing is fitted inside each CV fold (no data leakage).
+    
     Args:
         config: Training configuration
         model_names: Optional list of model names to create. If None, creates all available models.
     
     Returns:
-        Dictionary of model instances
+        Dictionary of model Pipeline instances
     """
     if model_names is None:
         model_names = AVAILABLE_MODELS
@@ -49,7 +52,8 @@ def create_models(config: TrainConfig, model_names: Optional[List[str]] = None) 
         if name not in AVAILABLE_MODELS:
             raise ValueError(f"Unknown model: {name}. Available: {AVAILABLE_MODELS}")
     
-    all_models = {
+    # Base estimators (without preprocessing)
+    base_estimators = {
         'random_forest': RandomForestClassifier(
             n_estimators=config.rf_n_estimators,
             max_depth=config.rf_max_depth,
@@ -66,17 +70,23 @@ def create_models(config: TrainConfig, model_names: Optional[List[str]] = None) 
             eval_metric='mlogloss',
             verbosity=0
         ),
-        'svm_rbf': Pipeline([
+        'svm_rbf': SVC(
+            kernel='rbf',
+            C=config.svm_C,
+            gamma=config.svm_gamma,
+            random_state=config.random_state,
+            probability=True,
+            class_weight='balanced'
+        )
+    }
+    
+    # Wrap all in Pipeline with StandardScaler for leakage-safe CV
+    all_models = {
+        name: Pipeline([
             ('scaler', StandardScaler()),
-            ('svm', SVC(
-                kernel='rbf',
-                C=config.svm_C,
-                gamma=config.svm_gamma,
-                random_state=config.random_state,
-                probability=True,
-                class_weight='balanced'
-            ))
+            ('model', estimator)
         ])
+        for name, estimator in base_estimators.items()
     }
     
     return {name: all_models[name] for name in model_names}
@@ -90,18 +100,20 @@ def train_model(
     sample_weights: Optional[np.ndarray] = None,
     progress: Optional[ProgressManager] = None
 ) -> Tuple[Any, float]:
-    """Train a single model and return training time."""
+    """Train a single model and return training time.
+    
+    For XGBoost inside a Pipeline, sample_weight must be passed as
+    'model__sample_weight' to reach the final estimator.
+    """
     logger = get_logger()
     
     start = time.time()
     logger.info(f"Training {model_name}...")
     
     # Train model - no fake progress bars, just log start/end
-    if model_name == 'xgboost':
-        if sample_weights is not None:
-            model.fit(X_train, y_train, sample_weight=sample_weights)
-        else:
-            model.fit(X_train, y_train)
+    if model_name == 'xgboost' and sample_weights is not None:
+        # Pipeline passes kwargs with prefix to final estimator
+        model.fit(X_train, y_train, model__sample_weight=sample_weights)
     else:
         model.fit(X_train, y_train)
         
@@ -157,7 +169,7 @@ def cross_validate_model(
         try:
             if model_name == 'xgboost':
                 sample_weights_fold = compute_balanced_sample_weights(y_train_fold)
-                fold_model.fit(X_train_fold, y_train_fold, sample_weight=sample_weights_fold)
+                fold_model.fit(X_train_fold, y_train_fold, model__sample_weight=sample_weights_fold)
             else:
                 fold_model.fit(X_train_fold, y_train_fold)
         except Exception as e:
@@ -292,16 +304,19 @@ def train_all_models(
 
 
 def save_models(results: Dict[str, Dict[str, Any]], feature_names: list, 
-                scaler: Any, output_dir: str):
-    """Save trained models and preprocessing artifacts."""
+                output_dir: str):
+    """Save trained models and preprocessing artifacts.
+    
+    Scaler is now part of each model's Pipeline, so we only save feature names.
+    """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     for name, result in results.items():
         model_path = Path(output_dir) / f"{name}.joblib"
         joblib.dump(result['model'], model_path)
     
-    # Save feature names and scaler
-    joblib.dump({'feature_names': feature_names, 'scaler': scaler}, 
+    # Save feature names (scaler is inside each model's Pipeline)
+    joblib.dump({'feature_names': feature_names}, 
                 Path(output_dir) / "preprocessing.joblib")
     
     # Save class names

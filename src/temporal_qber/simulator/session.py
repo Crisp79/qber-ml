@@ -15,6 +15,7 @@ class SessionConfig:
     """Configuration for a BB84 session."""
     n_transmissions: int = 100000
     window_size: int = 50  # Bits per temporal window (paper's W)
+    stride: int = 50  # Stride for temporal windows (default = window_size for non-overlapping)
     min_sifted_bits: int = 200  # Minimum bits for valid session
     seed: Optional[int] = None
     alice_p_z: float = 0.5
@@ -22,6 +23,7 @@ class SessionConfig:
     detection_efficiency: float = 1.0
     channel_type: str = "ideal"
     channel_params: Optional[dict] = None
+    include_partial_trailing: bool = False  # Include incomplete trailing window
 
 
 @dataclass

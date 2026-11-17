@@ -156,13 +156,17 @@ class TestModelConfiguration:
         """Test that Random Forest uses balanced class weight."""
         models = create_models(TrainConfig())
         rf = models['random_forest']
-        assert rf.class_weight == 'balanced'
+        # Model is now a Pipeline; get the base estimator
+        base_rf = rf.named_steps['model']
+        assert base_rf.class_weight == 'balanced'
     
     def test_svm_class_weight(self):
         """Test that SVM uses balanced class weight."""
         models = create_models(TrainConfig())
         svm = models['svm_rbf']
-        assert svm.named_steps['svm'].class_weight == 'balanced'
+        # Model is now a Pipeline; get the base estimator
+        base_svm = svm.named_steps['model']
+        assert base_svm.class_weight == 'balanced'
 
 
 class TestLeakageDetection:

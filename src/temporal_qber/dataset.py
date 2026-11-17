@@ -215,8 +215,11 @@ def transform_data(
     return X_train_scaled, X_test_scaled
 
 
-def save_preprocessing(scaler: StandardScaler, feature_names: List[str], path: str):
-    """Save scaler and feature names."""
+def save_preprocessing(scaler: Optional[StandardScaler], feature_names: List[str], path: str):
+    """Save scaler (optional) and feature names.
+    
+    Scaler is now part of each model's Pipeline, so this only saves feature names.
+    """
     joblib.dump({'scaler': scaler, 'feature_names': feature_names}, path)
 
 

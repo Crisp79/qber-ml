@@ -61,17 +61,20 @@ def explain_model_shap(
     # Create explainer
     logger.info(f"Creating SHAP explainer for {model_name}...")
     
+    # Extract base estimator from Pipeline if needed
+    base_model = model.named_steps['model'] if hasattr(model, 'named_steps') else model
+    
     if progress and progress.enabled:
         with progress.progress(total=3, desc=f"SHAP {model_name}", unit="step") as pbar:
             # For tree models, use TreeExplainer
-            if hasattr(model, 'get_booster') or hasattr(model, 'estimators_'):
-                explainer = shap.TreeExplainer(model)
+            if hasattr(base_model, 'get_booster') or hasattr(base_model, 'estimators_'):
+                explainer = shap.TreeExplainer(base_model)
             else:
                 # For other models, use KernelExplainer (slower)
                 # Use a small background sample
                 bg_size = min(100, len(X_train))
                 background = shap.kmeans(X_train, bg_size)
-                explainer = shap.KernelExplainer(model.predict_proba, background)
+                explainer = shap.KernelExplainer(base_model.predict_proba, background)
             pbar.update(1)
             
             # Compute SHAP values
@@ -87,14 +90,14 @@ def explain_model_shap(
             pbar.update(1)
     else:
         # For tree models, use TreeExplainer
-        if hasattr(model, 'get_booster') or hasattr(model, 'estimators_'):
-            explainer = shap.TreeExplainer(model)
+        if hasattr(base_model, 'get_booster') or hasattr(base_model, 'estimators_'):
+            explainer = shap.TreeExplainer(base_model)
         else:
             # For other models, use KernelExplainer (slower)
             # Use a small background sample
             bg_size = min(100, len(X_train))
             background = shap.kmeans(X_train, bg_size)
-            explainer = shap.KernelExplainer(model.predict_proba, background)
+            explainer = shap.KernelExplainer(base_model.predict_proba, background)
         
         # Compute SHAP values
         logger.info(f"Computing SHAP values for {n_explain} samples...")

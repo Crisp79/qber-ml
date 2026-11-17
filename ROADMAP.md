@@ -23,10 +23,10 @@ Status meanings: **DONE** = verified in the current repository; **IN PROGRESS** 
 ## Milestone 2 — Leakage-Safe QAD Baseline
 
 - [x] **DONE**: Verified stratified and reproducible train/test split (80/20, seed=42, `test_invariants.py::test_train_test_split_stratified`)
-- [ ] **IN PROGRESS**: Fit learned preprocessing independently inside each CV fold — **CURRENTLY NOT DONE**: `StandardScaler` fitted on full `X_train` before CV. Tree models unaffected; SVM double-scales via Pipeline. This is a known leakage risk.
-- [ ] **IN PROGRESS**: Verify SVM uses a fold-safe scaling pipeline — **CURRENTLY NOT DONE**: Data pre-scaled externally, then SVM Pipeline applies second scaler. Should use Pipeline for all models with scaler inside CV.
+- [x] **DONE**: Fit learned preprocessing independently inside each CV fold — All models now wrapped in `Pipeline(StandardScaler, Model)` so scaling is fitted per fold. Verified by test `test_scaler_fitted_on_train_only` and CV fold independence.
+- [x] **DONE**: Verify SVM uses a fold-safe scaling pipeline — SVM now uses same Pipeline structure as other models; no double-scaling.
 - [x] **DONE**: Verified intended inputs for tree models (45 features, no scaling needed)
-- [x] **DONE**: Audited XGBoost multiclass sample weighting (`compute_balanced_sample_weights` used in training and CV folds)
+- [x] **DONE**: Audited XGBoost multiclass sample weighting (`compute_balanced_sample_weights` used in training and CV folds with `model__sample_weight` prefix)
 - [x] **DONE**: Recomputed RF, XGBoost, and SVM baseline results (saved in `results/evaluation_results.json` with per-fold CV metrics)
 - [x] **DONE**: Saved predictions, class supports, configuration, metrics, and confusion matrices
 - [x] **DONE**: Report CV and held-out test metrics separately (both in `evaluation_results.json` and notebook)

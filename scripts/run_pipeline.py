@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from temporal_qber.dataset import (
     load_qad_dataset, prepare_features_targets, split_data, 
-    fit_scaler, transform_data, save_preprocessing, get_class_distribution
+    save_preprocessing, get_class_distribution
 )
 from temporal_qber.train import train_all_models, save_models, TrainConfig
 from temporal_qber.evaluate import (
@@ -97,16 +97,14 @@ def run_pipeline(
         config = TrainConfig()
         X_train, X_test, y_train, y_test = split_data(X, y, config)
         
-        # 4. Scale features
-        logger.info("\n[4/7] Scaling features...")
-        scaler = fit_scaler(X_train, progress=progress)
-        X_train_scaled, X_test_scaled = transform_data(scaler, X_train, X_test, progress=progress)
-        save_preprocessing(scaler, feature_names, f"{models_dir}/preprocessing.joblib")
+        # 4. Save feature names (scaler is now inside each model's Pipeline)
+        logger.info("\n[4/7] Saving feature names...")
+        save_preprocessing(None, feature_names, f"{models_dir}/preprocessing.joblib")
         
-        # 5. Train models
+        # 5. Train models (using raw data - Pipeline handles scaling inside CV)
         logger.info("\n[5/7] Training models...")
         train_results = train_all_models(
-            X_train_scaled, y_train, X_test_scaled, y_test, 
+            X_train, y_train, X_test, y_test, 
             config, progress=progress, model_names=models
         )
         
@@ -136,8 +134,8 @@ def run_pipeline(
             
             tracker.record_model_start(model_name)
             
-            # Comprehensive evaluation
-            eval_result = evaluate_model(model, X_test_scaled, y_test, QAD_CLASSES, progress=progress)
+            # Comprehensive evaluation (Pipeline handles scaling internally)
+            eval_result = evaluate_model(model, X_test, y_test, QAD_CLASSES, progress=progress)
             result['evaluation'] = eval_result
             
             # Confusion matrix plot
@@ -152,11 +150,13 @@ def run_pipeline(
             plots = [cm_path]
             
             # SHAP explanations (for tree models)
+            # Extract base estimator from Pipeline for SHAP
+            base_model = model.named_steps['model'] if hasattr(model, 'named_steps') else model
             shap_result = None
             if do_shap and model_name in ['random_forest', 'xgboost']:
                 logger.info(f"\nGenerating SHAP explanations for {model_name}...")
                 shap_result = explain_model_shap(
-                    model, X_train_scaled, X_test_scaled,
+                    base_model, X_train, X_test,
                     feature_names, QAD_CLASSES,
                     model_name, results_dir,
                     progress=progress
@@ -166,13 +166,13 @@ def run_pipeline(
                 plots.append(f"{results_dir}/{model_name}_shap_summary.png")
                 plots.append(f"{results_dir}/{model_name}_shap_beeswarm.png")
             
-            # Feature group ablation
+            # Feature group ablation (Pipeline handles scaling internally)
             ablation_result = None
             if do_ablation:
                 logger.info(f"\nRunning feature ablation for {model_name}...")
                 feature_groups = define_qad_feature_groups(feature_names)
                 ablation_result = feature_group_ablation(
-                    model, X_train_scaled, y_train, X_test_scaled, y_test,
+                    model, X_train, y_train, X_test, y_test,
                     feature_names, feature_groups, model_name, results_dir,
                     progress=progress
                 )
@@ -230,7 +230,7 @@ def run_pipeline(
         
         # Baseline evaluation (placeholder for QAD)
         logger.info("\nEvaluating baselines...")
-        baselines = evaluate_baselines(X_test_scaled, y_test)
+        baselines = evaluate_baselines(X_test, y_test)
         logger.info(f"Baselines: {baselines}")
         tracker.record_baselines(baselines)
         
@@ -252,7 +252,7 @@ def run_pipeline(
         
         # 7. Save models
         logger.info("\n[7/7] Saving models...")
-        save_models(train_results, feature_names, scaler, models_dir)
+        save_models(train_results, feature_names, models_dir)
         
         total_duration = time.time() - pipeline_start
         logger.info(f"\nPipeline complete in {total_duration:.1f}s!")

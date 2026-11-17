@@ -4,8 +4,8 @@ Short working queue. See [ROADMAP.md](ROADMAP.md) for milestone details.
 
 ## Immediate — Correctness Issues
 
-- [ ] **Fix QAD preprocessing leakage**: Move `StandardScaler` inside CV folds. Use `Pipeline(StandardScaler, Model)` for all three models so scaling is fitted independently per fold. Current code fits scaler on full `X_train` before CV.
-- [ ] **Fix SVM double-scaling**: Data is pre-scaled externally, then SVM `Pipeline` applies a second `StandardScaler`. After fix above, SVM should receive raw data and use its internal Pipeline.
+- [x] **DONE: Fix QAD preprocessing leakage** — All models now wrapped in `Pipeline(StandardScaler, Model)`. Scaling fitted independently per CV fold. No more external scaler fitted on full train set.
+- [x] **DONE: Fix SVM double-scaling** — SVM now uses same Pipeline structure; receives raw data, scaling happens inside Pipeline.
 - [ ] **Run QAD ablation without attack-specific parameters**: Create feature set excluding `swap_intensity`, `dp_error_rate`, `mt_flip_prob`, `ad_damping_param`, `has_noise_model`, etc. Retrain and evaluate to quantify shortcut learning.
 
 ## Missing Tests & Validation

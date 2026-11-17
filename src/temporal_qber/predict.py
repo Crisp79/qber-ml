@@ -11,15 +11,18 @@ from .config import QAD_CLASSES
 
 
 def load_artifacts(models_dir: str) -> Dict[str, Any]:
-    """Load all saved models and preprocessing artifacts."""
+    """Load all saved models and preprocessing artifacts.
+    
+    Models are now Pipelines with built-in scalers, so no separate scaler is needed.
+    """
     artifacts = {}
     
-    # Load preprocessing
+    # Load preprocessing (feature names only)
     prep_path = Path(models_dir) / "preprocessing.joblib"
     if prep_path.exists():
         prep = joblib.load(prep_path)
-        artifacts['scaler'] = prep['scaler']
         artifacts['feature_names'] = prep['feature_names']
+        # scaler is now inside each model's Pipeline
     
     # Load class names
     class_path = Path(models_dir) / "class_names.joblib"
@@ -38,15 +41,21 @@ def load_artifacts(models_dir: str) -> Dict[str, Any]:
     return artifacts
 
 
-def preprocess_sample(sample: np.ndarray, scaler: Any, 
+def preprocess_sample(sample: np.ndarray, scaler: Any = None, 
                       feature_names: List[str] = None) -> np.ndarray:
-    """Preprocess a single sample or batch."""
+    """Preprocess a single sample or batch.
+    
+    If scaler is provided, apply it. Otherwise, assume the model Pipeline handles scaling.
+    """
     # Ensure 2D
     if sample.ndim == 1:
         sample = sample.reshape(1, -1)
     
-    # Apply scaling
-    return scaler.transform(sample)
+    # Apply scaling if scaler provided (legacy support)
+    if scaler is not None:
+        return scaler.transform(sample)
+    
+    return sample
 
 
 def predict_single(model: Any, sample: np.ndarray, 
@@ -115,13 +124,9 @@ def demo_prediction(models_dir: str = "models", n_samples: int = 5):
     
     # Load artifacts
     artifacts = load_artifacts(models_dir)
-    scaler = artifacts['scaler']
     class_names = artifacts['class_names']
     
-    # Scale test data
-    X_test_scaled = scaler.transform(X_test)
-    
-    # Demo with each model
+    # Demo with each model (Pipeline handles scaling internally)
     for model_name in ['random_forest', 'xgboost', 'svm_rbf']:
         if model_name not in artifacts:
             print(f"Model {model_name} not found, skipping...")
@@ -131,7 +136,7 @@ def demo_prediction(models_dir: str = "models", n_samples: int = 5):
         print(f"\n--- {model_name} Demo ---")
         
         for i in range(min(n_samples, len(X_test))):
-            sample = X_test_scaled[i:i+1]
+            sample = X_test[i:i+1]  # Raw data - Pipeline handles scaling
             true_label = class_names[y_test[i]]
             pred = predict_single(model, sample, class_names)
             print(f"  Sample {i}: True={true_label}, Pred={pred['predicted_label']}, Conf={pred['confidence']:.3f}")
