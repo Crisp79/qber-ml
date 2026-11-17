@@ -74,8 +74,8 @@ Status meanings: **DONE** = verified in the current repository; **IN PROGRESS** 
   - [x] **DONE**: Trojan Horse — `trojan_horse`, `trojan_horse_active` variants
   - [x] **DONE**: Quantum Cloning — `quantum_cloning`, `quantum_cloning_measure` variants
   - [x] **DONE**: Fake State — `fake_state` with multiple subtypes
+- [x] **DONE**: Generate documented simulation datasets (multi-session, multi-attack, balanced classes) — `scripts/generate_bb84_dataset.py`
 - [ ] **PLANNED**: Verify labels are not encoded in features or simulator metadata (public vs. private info separation exists in `BB84Result.get_public_info()`)
-- [ ] **PLANNED**: Generate documented simulation datasets (multi-session, multi-attack, balanced classes)
 - [ ] **PLANNED**: Train/evaluate with leakage-safe splits and reproducible configurations
 - [ ] **PLANNED**: Compare threshold/CUSUM baselines only on the same simulated data and protocol
 - [ ] **PLANNED**: Distinguish reproduction from partial adaptation
@@ -95,5 +95,5 @@ Status meanings: **DONE** = verified in the current repository; **IN PROGRESS** 
 2. **Run QAD ablation without attack-specific parameters** ✅ DONE — Quantified 33-43% accuracy drops; confirmed shortcut learning.
 3. **Implement BB84 attacks 1-3** (PNS, Beam Splitting, Time-Shift) ✅ DONE
 4. **Implement remaining BB84 attacks** (Trojan Horse, Quantum Cloning, Fake State) ✅ DONE
-5. **Generate BB84 simulation dataset** — multi-session, multi-attack, 63 temporal features per session
+5. **Generate BB84 simulation dataset** ✅ DONE — `scripts/generate_bb84_dataset.py` produces balanced multi-class dataset with 63 temporal-QBER features
 6. **Build report PDF** — moved to last; verify MiKTeX path and bibliography.
