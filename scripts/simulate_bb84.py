@@ -130,7 +130,10 @@ def main():
     parser.add_argument('--attack-type', type=str, default='none',
                         choices=['none', 'intercept_resend', 'partial_intercept_resend',
                                  'pns', 'pns_storage', 'beam_splitting', 'beam_splitting_fixed',
-                                 'time_shift', 'time_shift_intercept'],
+                                 'time_shift', 'time_shift_intercept',
+                                 'trojan_horse', 'trojan_horse_active',
+                                 'quantum_cloning', 'quantum_cloning_measure',
+                                 'fake_state'],
                         help='Attack type')
     parser.add_argument('--attack-param', type=float, default=0.0,
                         help='Attack parameter (meaning depends on attack type)')
@@ -188,11 +191,21 @@ def main():
             attack_params['mean_photon_number'] = args.attack_param if args.attack_param > 0 else 0.1
         elif args.attack_type == 'beam_splitting':
             attack_params['reflection_coeff'] = args.attack_param if args.attack_param > 0 else 0.1
+        elif args.attack_type == 'beam_splitting_fixed':
+            attack_params['reflection_coeff'] = args.attack_param if args.attack_param > 0 else 0.1
         elif args.attack_type == 'time_shift':
             attack_params['time_shift'] = args.attack_param if args.attack_param > 0 else 0.5
         elif args.attack_type == 'time_shift_intercept':
             attack_params['time_shift'] = args.attack_param if args.attack_param > 0 else 0.5
             attack_params['intercept_prob'] = 1.0
+        elif args.attack_type in ('trojan_horse', 'trojan_horse_active'):
+            attack_params['probe_photons'] = int(args.attack_param) if args.attack_param > 0 else 1000
+        elif args.attack_type in ('quantum_cloning', 'quantum_cloning_measure'):
+            attack_params['cloning_type'] = 'universal'
+        elif args.attack_type == 'fake_state':
+            attack_params['attack_subtype'] = 'detector_mismatch'
+            attack_params['det0_efficiency'] = 1.0
+            attack_params['det1_efficiency'] = 0.8
         
         # Run simulation
         if args.config:

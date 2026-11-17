@@ -71,9 +71,9 @@ Status meanings: **DONE** = verified in the current repository; **IN PROGRESS** 
   - [x] **DONE**: Photon Number Splitting (PNS) — `pns`, `pns_storage` variants
   - [x] **DONE**: Beam Splitting — `beam_splitting`, `beam_splitting_fixed` variants
   - [x] **DONE**: Time-Shift — `time_shift`, `time_shift_intercept` variants
-  - [ ] **PLANNED**: Trojan Horse
-  - [ ] **PLANNED**: Quantum Cloning
-  - [ ] **PLANNED**: Fake State
+  - [x] **DONE**: Trojan Horse — `trojan_horse`, `trojan_horse_active` variants
+  - [x] **DONE**: Quantum Cloning — `quantum_cloning`, `quantum_cloning_measure` variants
+  - [x] **DONE**: Fake State — `fake_state` with multiple subtypes
 - [ ] **PLANNED**: Verify labels are not encoded in features or simulator metadata (public vs. private info separation exists in `BB84Result.get_public_info()`)
 - [ ] **PLANNED**: Generate documented simulation datasets (multi-session, multi-attack, balanced classes)
 - [ ] **PLANNED**: Train/evaluate with leakage-safe splits and reproducible configurations
@@ -94,6 +94,6 @@ Status meanings: **DONE** = verified in the current repository; **IN PROGRESS** 
 1. **Fix QAD preprocessing leakage** ✅ DONE — All models wrapped in `Pipeline(StandardScaler, Model)` with per-fold scaling.
 2. **Run QAD ablation without attack-specific parameters** ✅ DONE — Quantified 33-43% accuracy drops; confirmed shortcut learning.
 3. **Implement BB84 attacks 1-3** (PNS, Beam Splitting, Time-Shift) ✅ DONE
-4. **Implement remaining BB84 attacks** (Trojan Horse, Quantum Cloning, Fake State)
+4. **Implement remaining BB84 attacks** (Trojan Horse, Quantum Cloning, Fake State) ✅ DONE
 5. **Generate BB84 simulation dataset** — multi-session, multi-attack, 63 temporal features per session
 6. **Build report PDF** — moved to last; verify MiKTeX path and bibliography.

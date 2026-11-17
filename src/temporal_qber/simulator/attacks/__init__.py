@@ -24,6 +24,20 @@ from .time_shift import (
     TimeShiftAttackWithIntercept,
     TimeShiftResult,
 )
+from .trojan_horse import (
+    TrojanHorseAttack,
+    TrojanHorseActiveAttack,
+    TrojanHorseResult,
+)
+from .quantum_cloning import (
+    QuantumCloningAttack,
+    QuantumCloningAttackMeasure,
+    CloningResult,
+)
+from .fake_state import (
+    FakeStateAttack,
+    FakeStateResult,
+)
 
 __all__ = [
     "BaseAttack",
@@ -41,5 +55,13 @@ __all__ = [
     "TimeShiftAttack",
     "TimeShiftAttackWithIntercept",
     "TimeShiftResult",
+    "TrojanHorseAttack",
+    "TrojanHorseActiveAttack",
+    "TrojanHorseResult",
+    "QuantumCloningAttack",
+    "QuantumCloningAttackMeasure",
+    "CloningResult",
+    "FakeStateAttack",
+    "FakeStateResult",
     "create_attack",
 ]

@@ -13,6 +13,9 @@ from .base import BaseAttack, NoAttack, AttackResult
 from .pns import PNSAttack, PNSAttackWithStorage
 from .beam_splitting import BeamSplittingAttack, BeamSplittingAttackFixedPhoton
 from .time_shift import TimeShiftAttack, TimeShiftAttackWithIntercept
+from .trojan_horse import TrojanHorseAttack, TrojanHorseActiveAttack
+from .quantum_cloning import QuantumCloningAttack, QuantumCloningAttackMeasure
+from .fake_state import FakeStateAttack
 from ..alice import Basis, Bit, BB84_STATES, measure_state_in_basis, sample_measurement
 
 
@@ -236,8 +239,69 @@ def create_attack(
             intercept_prob=intercept_prob,
             seed=seed
         )
+    elif attack_type == 'trojan_horse':
+        probe_photons = kwargs.get('probe_photons', 1000)
+        back_reflection_coeff = kwargs.get('back_reflection_coeff', 1e-4)
+        basis_inference_prob = kwargs.get('basis_inference_prob', 0.9)
+        detector_saturation_prob = kwargs.get('detector_saturation_prob', 0.0)
+        return TrojanHorseAttack(
+            probe_photons=probe_photons,
+            back_reflection_coeff=back_reflection_coeff,
+            basis_inference_prob=basis_inference_prob,
+            detector_saturation_prob=detector_saturation_prob,
+            seed=seed
+        )
+    elif attack_type == 'trojan_horse_active':
+        probe_photons = kwargs.get('probe_photons', 10000)
+        back_reflection_coeff = kwargs.get('back_reflection_coeff', 1e-4)
+        basis_inference_prob = kwargs.get('basis_inference_prob', 0.95)
+        detector_saturation_prob = kwargs.get('detector_saturation_prob', 0.1)
+        return TrojanHorseActiveAttack(
+            probe_photons=probe_photons,
+            back_reflection_coeff=back_reflection_coeff,
+            basis_inference_prob=basis_inference_prob,
+            detector_saturation_prob=detector_saturation_prob,
+            seed=seed
+        )
+    elif attack_type == 'quantum_cloning':
+        cloning_type = kwargs.get('cloning_type', 'universal')
+        custom_fidelity = kwargs.get('custom_fidelity', None)
+        custom_bob_fidelity = kwargs.get('custom_bob_fidelity', None)
+        return QuantumCloningAttack(
+            cloning_type=cloning_type,
+            custom_fidelity=custom_fidelity,
+            custom_bob_fidelity=custom_bob_fidelity,
+            seed=seed
+        )
+    elif attack_type == 'quantum_cloning_measure':
+        cloning_type = kwargs.get('cloning_type', 'universal')
+        custom_fidelity = kwargs.get('custom_fidelity', None)
+        custom_bob_fidelity = kwargs.get('custom_bob_fidelity', None)
+        return QuantumCloningAttackMeasure(
+            cloning_type=cloning_type,
+            custom_fidelity=custom_fidelity,
+            custom_bob_fidelity=custom_bob_fidelity,
+            seed=seed
+        )
+    elif attack_type == 'fake_state':
+        attack_subtype = kwargs.get('attack_subtype', 'phase_remapped')
+        phase_shift = kwargs.get('phase_shift', 0.0)
+        det0_efficiency = kwargs.get('det0_efficiency', 1.0)
+        det1_efficiency = kwargs.get('det1_efficiency', 1.0)
+        multi_photon_prob = kwargs.get('multi_photon_prob', 0.0)
+        wavelength_shift = kwargs.get('wavelength_shift', 0.0)
+        return FakeStateAttack(
+            attack_subtype=attack_subtype,
+            phase_shift=phase_shift,
+            det0_efficiency=det0_efficiency,
+            det1_efficiency=det1_efficiency,
+            multi_photon_prob=multi_photon_prob,
+            wavelength_shift=wavelength_shift,
+            seed=seed
+        )
     else:
         raise ValueError(f"Unknown attack type: {attack_type}. "
                          f"Available: none, intercept_resend, partial_intercept_resend, "
                          f"pns, pns_storage, beam_splitting, beam_splitting_fixed, "
-                         f"time_shift, time_shift_intercept")
+                         f"time_shift, time_shift_intercept, trojan_horse, trojan_horse_active, "
+                         f"quantum_cloning, quantum_cloning_measure, fake_state")
