@@ -128,10 +128,12 @@ def main():
     parser.add_argument('--dark-count-prob', type=float, default=0.0,
                         help='Dark count probability [0, 1]')
     parser.add_argument('--attack-type', type=str, default='none',
-                        choices=['none', 'intercept_resend', 'partial_intercept_resend'],
+                        choices=['none', 'intercept_resend', 'partial_intercept_resend',
+                                 'pns', 'pns_storage', 'beam_splitting', 'beam_splitting_fixed',
+                                 'time_shift', 'time_shift_intercept'],
                         help='Attack type')
     parser.add_argument('--attack-param', type=float, default=0.0,
-                        help='Attack parameter (interception probability for partial intercept-resend)')
+                        help='Attack parameter (meaning depends on attack type)')
     parser.add_argument('--log-level', type=str, default='INFO',
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                         help='Logging level')
@@ -182,6 +184,15 @@ def main():
         attack_params = {}
         if args.attack_type == 'partial_intercept_resend':
             attack_params['interception_prob'] = args.attack_param
+        elif args.attack_type in ('pns', 'pns_storage'):
+            attack_params['mean_photon_number'] = args.attack_param if args.attack_param > 0 else 0.1
+        elif args.attack_type == 'beam_splitting':
+            attack_params['reflection_coeff'] = args.attack_param if args.attack_param > 0 else 0.1
+        elif args.attack_type == 'time_shift':
+            attack_params['time_shift'] = args.attack_param if args.attack_param > 0 else 0.5
+        elif args.attack_type == 'time_shift_intercept':
+            attack_params['time_shift'] = args.attack_param if args.attack_param > 0 else 0.5
+            attack_params['intercept_prob'] = 1.0
         
         # Run simulation
         if args.config:

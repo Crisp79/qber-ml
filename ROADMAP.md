@@ -66,11 +66,11 @@ Status meanings: **DONE** = verified in the current repository; **IN PROGRESS** 
 
 - [x] **DONE**: Define sifted-bit windowing and temporal QBER calculation (`temporal/windowing.py`, `temporal/qber.py`, `SessionConfig` with W=50, stride=50, min_sifted_bits=200)
 - [x] **DONE**: Implement/test temporal features using verified paper definitions (63 features across 5 groups in `temporal/features.py`; matches paper's feature list)
-- [ ] **PLANNED**: Implement attack models individually with documented parameters:
+- [x] **DONE**: Implement attack models individually with documented parameters:
   - [x] **DONE**: Intercept-resend (full and partial)
-  - [ ] **PLANNED**: Photon Number Splitting (PNS)
-  - [ ] **PLANNED**: Beam Splitting
-  - [ ] **PLANNED**: Time-Shift
+  - [x] **DONE**: Photon Number Splitting (PNS) — `pns`, `pns_storage` variants
+  - [x] **DONE**: Beam Splitting — `beam_splitting`, `beam_splitting_fixed` variants
+  - [x] **DONE**: Time-Shift — `time_shift`, `time_shift_intercept` variants
   - [ ] **PLANNED**: Trojan Horse
   - [ ] **PLANNED**: Quantum Cloning
   - [ ] **PLANNED**: Fake State
@@ -93,7 +93,7 @@ Status meanings: **DONE** = verified in the current repository; **IN PROGRESS** 
 
 1. **Fix QAD preprocessing leakage** ✅ DONE — All models wrapped in `Pipeline(StandardScaler, Model)` with per-fold scaling.
 2. **Run QAD ablation without attack-specific parameters** ✅ DONE — Quantified 33-43% accuracy drops; confirmed shortcut learning.
-3. **Implement BB84 attacks 1-3** (PNS, Beam Splitting, Time-Shift) — next BB84 milestones.
-4. **Generate BB84 simulation dataset** — multi-session, multi-attack, 63 temporal features per session.
-5. **Implement remaining BB84 attacks** (Trojan Horse, Quantum Cloning, Fake State).
+3. **Implement BB84 attacks 1-3** (PNS, Beam Splitting, Time-Shift) ✅ DONE
+4. **Implement remaining BB84 attacks** (Trojan Horse, Quantum Cloning, Fake State)
+5. **Generate BB84 simulation dataset** — multi-session, multi-attack, 63 temporal features per session
 6. **Build report PDF** — moved to last; verify MiKTeX path and bibliography.

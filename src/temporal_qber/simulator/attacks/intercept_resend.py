@@ -10,6 +10,9 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 from .base import BaseAttack, NoAttack, AttackResult
+from .pns import PNSAttack, PNSAttackWithStorage
+from .beam_splitting import BeamSplittingAttack, BeamSplittingAttackFixedPhoton
+from .time_shift import TimeShiftAttack, TimeShiftAttackWithIntercept
 from ..alice import Basis, Bit, BB84_STATES, measure_state_in_basis, sample_measurement
 
 
@@ -152,7 +155,9 @@ def create_attack(
     Factory function to create attack instances.
     
     Args:
-        attack_type: Type of attack ('none', 'intercept_resend', 'partial_intercept_resend')
+        attack_type: Type of attack ('none', 'intercept_resend', 'partial_intercept_resend',
+                     'pns', 'pns_storage', 'beam_splitting', 'beam_splitting_fixed',
+                     'time_shift', 'time_shift_intercept')
         seed: Random seed
         **kwargs: Attack-specific parameters
         
@@ -171,6 +176,68 @@ def create_attack(
             interception_prob=interception_prob, 
             seed=seed
         )
+    elif attack_type == 'pns':
+        mean_photon_number = kwargs.get('mean_photon_number', 0.1)
+        single_photon_strategy = kwargs.get('single_photon_strategy', 'pass')
+        return PNSAttack(
+            mean_photon_number=mean_photon_number,
+            single_photon_strategy=single_photon_strategy,
+            seed=seed
+        )
+    elif attack_type == 'pns_storage':
+        mean_photon_number = kwargs.get('mean_photon_number', 0.1)
+        single_photon_strategy = kwargs.get('single_photon_strategy', 'pass')
+        return PNSAttackWithStorage(
+            mean_photon_number=mean_photon_number,
+            single_photon_strategy=single_photon_strategy,
+            seed=seed
+        )
+    elif attack_type == 'beam_splitting':
+        reflection_coeff = kwargs.get('reflection_coeff', 0.1)
+        mean_photon_number = kwargs.get('mean_photon_number', 0.1)
+        return BeamSplittingAttack(
+            reflection_coeff=reflection_coeff,
+            mean_photon_number=mean_photon_number,
+            seed=seed
+        )
+    elif attack_type == 'beam_splitting_fixed':
+        reflection_coeff = kwargs.get('reflection_coeff', 0.1)
+        return BeamSplittingAttackFixedPhoton(
+            reflection_coeff=reflection_coeff,
+            seed=seed
+        )
+    elif attack_type == 'time_shift':
+        time_shift = kwargs.get('time_shift', 0.5)
+        det0_peak_time = kwargs.get('det0_peak_time', 0.0)
+        det1_peak_time = kwargs.get('det1_peak_time', 0.2)
+        det_width = kwargs.get('det_width', 1.0)
+        max_efficiency = kwargs.get('max_efficiency', 1.0)
+        return TimeShiftAttack(
+            time_shift=time_shift,
+            det0_peak_time=det0_peak_time,
+            det1_peak_time=det1_peak_time,
+            det_width=det_width,
+            max_efficiency=max_efficiency,
+            seed=seed
+        )
+    elif attack_type == 'time_shift_intercept':
+        time_shift = kwargs.get('time_shift', 0.5)
+        det0_peak_time = kwargs.get('det0_peak_time', 0.0)
+        det1_peak_time = kwargs.get('det1_peak_time', 0.2)
+        det_width = kwargs.get('det_width', 1.0)
+        max_efficiency = kwargs.get('max_efficiency', 1.0)
+        intercept_prob = kwargs.get('intercept_prob', 1.0)
+        return TimeShiftAttackWithIntercept(
+            time_shift=time_shift,
+            det0_peak_time=det0_peak_time,
+            det1_peak_time=det1_peak_time,
+            det_width=det_width,
+            max_efficiency=max_efficiency,
+            intercept_prob=intercept_prob,
+            seed=seed
+        )
     else:
         raise ValueError(f"Unknown attack type: {attack_type}. "
-                         f"Available: none, intercept_resend, partial_intercept_resend")
+                         f"Available: none, intercept_resend, partial_intercept_resend, "
+                         f"pns, pns_storage, beam_splitting, beam_splitting_fixed, "
+                         f"time_shift, time_shift_intercept")

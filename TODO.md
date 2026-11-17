@@ -46,7 +46,7 @@ Short working queue. See [ROADMAP.md](ROADMAP.md) for milestone details.
 **Priority Order:**
 1. Fix preprocessing leakage (highest impact on scientific correctness) ✅ DONE
 2. Run ablation without attack-specific params (quantifies shortcut learning) ✅ DONE
-3. **Implement BB84 attacks 1-3** (PNS, Beam Splitting, Time-Shift)
-4. **Generate BB84 dataset** and evaluate temporal-QBER pipeline
-5. **Implement remaining BB84 attacks** (Trojan Horse, Quantum Cloning, Fake State)
+3. **Implement BB84 attacks 1-3** (PNS, Beam Splitting, Time-Shift) ✅ DONE
+4. **Implement remaining BB84 attacks** (Trojan Horse, Quantum Cloning, Fake State)
+5. **Generate BB84 dataset** and evaluate temporal-QBER pipeline
 6. Build report PDF (delivery artifact) — **moved to last**
