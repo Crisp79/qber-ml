@@ -16,8 +16,11 @@ import argparse
 import sys
 import json
 import time
+import os
+import signal
+import multiprocessing
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import pandas as pd
 
@@ -42,6 +45,9 @@ BB84_CLASSES = [
     "quantum_cloning",    # 6
     "fake_state",         # 7
 ]
+
+# Checkpoint file for resume capability
+CHECKPOINT_FILE = "bb84_dataset_checkpoint.json"
 
 # Attack configurations (paper's parameters where specified)
 ATTACK_CONFIGS = {
@@ -98,6 +104,142 @@ ATTACK_CONFIGS = {
         "channel_params": {},
     },
 }
+
+
+def load_checkpoint(output_path: Path) -> Dict[str, Any]:
+    """Load checkpoint data if exists."""
+    checkpoint_path = output_path / CHECKPOINT_FILE
+    if checkpoint_path.exists():
+        with open(checkpoint_path, 'r') as f:
+            return json.load(f)
+    return {
+        "completed_sessions": [],
+        "session_results": {},
+        "next_session_id": 0,
+        "total_sessions": 0,
+        "start_time": time.time(),
+    }
+
+
+def save_checkpoint(output_path: Path, checkpoint: Dict[str, Any]):
+    """Save checkpoint data."""
+    checkpoint_path = output_path / CHECKPOINT_FILE
+    with open(checkpoint_path, 'w') as f:
+        json.dump(checkpoint, f, indent=2, default=str)
+
+
+def session_key(class_idx: int, session_idx: int, n_sessions_per_class: int) -> str:
+    """Generate unique session key for checkpoint tracking."""
+    return f"{class_idx}_{session_idx}"
+
+
+def generate_session_task(args: Tuple) -> Tuple[str, Dict[str, Any], Optional[str]]:
+    """
+    Worker function to generate a single BB84 session with features.
+    
+    Args:
+        args: Tuple of (class_idx, class_name, session_idx, n_transmissions, 
+                      window_size, stride, min_sifted_bits, seed, attack_config)
+    
+    Returns:
+        Tuple of (session_key, features_dict, error_message)
+    """
+    class_idx, class_name, session_idx, n_transmissions, window_size, stride, \
+    min_sifted_bits, seed, attack_config = args
+    
+    try:
+        # Import here to avoid pickling issues
+        from temporal_qber.simulator import run_bb84_simulation
+        from temporal_qber.temporal import extract_temporal_qber_features, WindowConfig
+        from temporal_qber.simulator.session import SessionConfig as TemporalSessionConfig
+        
+        # Create session config
+        session_config = TemporalSessionConfig(
+            n_transmissions=n_transmissions,
+            window_size=window_size,
+            stride=stride,
+            min_sifted_bits=min_sifted_bits,
+            seed=seed,
+            alice_p_z=0.5,
+            bob_p_z=0.5,
+            detection_efficiency=1.0,
+            channel_type=attack_config.get('channel_type', 'ideal'),
+            channel_params=attack_config.get('channel_params', {}),
+        )
+        
+        # Run BB84 simulation
+        bb84_config = {
+            'n_transmissions': n_transmissions,
+            'seed': seed,
+            'alice_p_z': 0.5,
+            'bob_p_z': 0.5,
+            'detection_efficiency': 1.0,
+            'dark_count_prob': 0.0,
+            'channel_type': attack_config.get('channel_type', 'ideal'),
+            'channel_params': attack_config.get('channel_params', {}),
+            'attack_type': attack_config.get('attack_type', 'none'),
+            'attack_params': attack_config.get('attack_params', {}),
+        }
+        
+        result = run_bb84_simulation(**bb84_config)
+        
+        # Extract temporal features
+        bob_detected_filtered = result.bob_detected[result.matching_bases_mask & result.bob_detected]
+        
+        window_config = WindowConfig(
+            window_size=window_size,
+            stride=stride,
+            min_sifted_bits=min_sifted_bits,
+            include_partial_trailing=False,
+        )
+        
+        features = extract_temporal_qber_features(
+            sifted_alice=result.sifted_alice_bits,
+            sifted_bob=result.sifted_bob_bits,
+            bob_detected=bob_detected_filtered,
+            window_config=WindowConfig(
+                window_size=window_size,
+                stride=stride,
+                min_sifted_bits=min_sifted_bits,
+            ),
+            min_sifted_bits=min_sifted_bits,
+        )
+        
+        # Add metadata
+        features.update({
+            'class_label': attack_config.get('class_label', 'unknown'),
+            'class_index': attack_config.get('class_index', -1),
+            'n_transmissions': result.n_transmissions,
+            'seed': result.seed,
+            'channel_type': result.channel_config.get('channel_type', 'unknown'),
+            'attack_type': result.attack_type,
+            'attack_params': str(result.attack_params),
+            'sifted_key_length': result.sifted_key_length,
+            'sifting_efficiency': result.sifting_efficiency,
+            'overall_qber': result.qber,
+            'elapsed_time': result.elapsed_time,
+        })
+        
+        session_key_str = f"{args[0]}_{args[2]}"
+        return session_key_str, features, None
+        
+    except Exception as e:
+        session_key_str = f"{args[0]}_{args[2]}"
+        return session_key_str, {}, f"Class {args[1]}, session {args[2]}, seed {args[7]}: {str(e)}"
+
+
+def generate_dataset(
+    n_sessions_per_class: int = 3000,
+    n_transmissions: int = 100000,
+    window_size: int = 50,
+    stride: int = 50,
+    min_sifted_bits: int = 30,
+    output_dir: str = "data/bb84",
+    log_level: str = "INFO",
+    disable_progress: bool = False,
+    workers: int = 1,
+) -> str:
+    """Generate the full BB84 dataset with multiprocessing support."""
 
 
 def create_session_config(
@@ -192,12 +334,13 @@ def generate_dataset(
     n_transmissions: int = 100000,
     window_size: int = 50,
     stride: int = 50,
-    min_sifted_bits: int = 200,
+    min_sifted_bits: int = 30,
     output_dir: str = "data/bb84",
     log_level: str = "INFO",
     disable_progress: bool = False,
+    workers: int = 1,
 ) -> str:
-    """Generate the full BB84 dataset."""
+    """Generate the full BB84 dataset with multiprocessing support."""
     
     # Setup logging
     logger = setup_logging(
@@ -212,6 +355,12 @@ def generate_dataset(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
+    # Load checkpoint if exists
+    checkpoint = load_checkpoint(output_path)
+    completed_keys = set(checkpoint.get("completed_sessions", []))
+    session_results = checkpoint.get("session_results", {})
+    session_id = checkpoint.get("next_session_id", 0)
+    
     logger.info("=" * 60)
     logger.info("BB84 DATASET GENERATION")
     logger.info("=" * 60)
@@ -221,76 +370,148 @@ def generate_dataset(
     logger.info(f"Transmissions per session: {n_transmissions:,}")
     logger.info(f"Window size: {window_size}, Stride: {stride}")
     logger.info(f"Min sifted bits per window: {min_sifted_bits}")
+    logger.info(f"Workers: {workers}")
+    if completed_keys:
+        logger.info(f"Resuming from checkpoint: {len(completed_keys)} sessions already completed")
     
-    all_sessions = []
-    session_id = 0
-    
-    # For each attack class
+    # Prepare all session tasks
+    all_tasks = []
     for class_idx, class_name in enumerate(BB84_CLASSES):
         attack_config = ATTACK_CONFIGS[class_name].copy()
         attack_config['class_label'] = class_name
         attack_config['class_index'] = class_idx
         
-        logger.info(f"\nGenerating class {class_idx}: {class_name} ({n_sessions_per_class} sessions)")
+        for i in range(n_sessions_per_class):
+            session_key_str = session_key(class_idx, i, n_sessions_per_class)
+            if session_key_str in completed_keys:
+                continue
+            
+            seed = (class_idx * n_sessions_per_class + i) * 1000 + 42
+            task_args = (
+                class_idx, class_name, i, n_transmissions, window_size, stride,
+                min_sifted_bits, seed, attack_config
+            )
+            all_tasks.append((session_key_str, task_args))
+    
+    logger.info(f"Total sessions to generate: {len(all_tasks)}")
+    
+    # Generate sessions
+    all_sessions = []
+    session_results = {}  # session_key -> features
+    checkpoint_interval = 100  # Save checkpoint every N sessions
+    
+    start_time = time.time()
+    
+    if workers == 1:
+        # Sequential processing
+        for i, (session_key_str, task_args) in enumerate(all_tasks):
+            session_key_str, features, error = generate_session_task(task_args)
+            
+            if error:
+                logger.error(f"Session {session_key_str} failed: {error}")
+            else:
+                session_results[session_key_str] = features
+                completed_keys.add(session_key_str)
+            
+            # Update progress
+            if progress.enabled:
+                pass  # progress handled by caller
+            
+            # Checkpoint periodically
+            if (i + 1) % checkpoint_interval == 0:
+                elapsed = time.time() - start_time
+                checkpoint.update({
+                    "completed_sessions": list(completed_keys),
+                    "session_results": session_results,
+                    "next_session_id": session_id + len(completed_keys),
+                    "total_sessions": len(all_tasks) + len(completed_keys),
+                    "elapsed_time": elapsed,
+                    "workers": workers,
+                })
+                save_checkpoint(output_path, checkpoint)
+    else:
+        # Parallel processing with ProcessPoolExecutor
+        # Use bounded submission to avoid queuing all tasks at once
+        max_queue_size = workers * 4
         
-        if progress.enabled:
-            with progress.progress(
-                total=n_sessions_per_class,
-                desc=f"Class {class_name}",
-                unit="session"
-            ) as pbar:
-                for i in range(n_sessions_per_class):
-                    # Create session config with unique seed
-                    seed = (class_idx * n_sessions_per_class + i) * 1000 + 42
-                    session_config = create_session_config(
-                        n_transmissions=n_transmissions,
-                        window_size=window_size,
-                        stride=stride,
-                        min_sifted_bits=min_sifted_bits,
-                        seed=seed,
-                        alice_p_z=0.5,
-                        bob_p_z=0.5,
-                        detection_efficiency=1.0,
-                        dark_count_prob=0.0,
-                    )
-                    
-                    try:
-                        features = run_bb84_session_with_features(
-                            session_config, attack_config, logger
-                        )
-                        features['session_id'] = session_id
-                        all_sessions.append(features)
-                        session_id += 1
-                    except Exception as e:
-                        logger.error(f"Session {session_id} failed: {e}")
-                        continue
-                    
-                    pbar.update(1)
-        else:
-            for i in range(n_sessions_per_class):
-                seed = (class_idx * n_sessions_per_class + i) * 1000 + 42
-                session_config = create_session_config(
-                    n_transmissions=n_transmissions,
-                    window_size=window_size,
-                    stride=stride,
-                    min_sifted_bits=min_sifted_bits,
-                    seed=seed,
-                    alice_p_z=0.5,
-                    bob_p_z=0.5,
-                    detection_efficiency=1.0,
-                    dark_count_prob=0.0,
-                )
-                
-                try:
-                    features = run_bb84_session_with_features(
-                        session_config, attack_config, logger
-                    )
-                    features['session_id'] = session_id
-                    all_sessions.append(features)
-                    session_id += 1
-                except Exception as e:
-                    logger.error(f"Session {session_id} failed: {e}")
-                    continue
+        with multiprocessing.Pool(processes=workers) as pool:
+            # Use imap_unordered for better memory efficiency
+            # but we need ordered results for deterministic output
+            # So we'll use a queue to maintain order
+            
+            # Submit tasks in batches
+            pending = {}
+            completed = 0
+            
+            # Submit initial batch
+            for i, (session_key_str, task_args) in enumerate(all_tasks):
+                if i < max_queue_size:
+                    future = pool.apply_async(generate_session_task, (task_args,))
+                    pending[future] = session_key_str
+                else:
+                    break
+            
+            # Process completed tasks and submit new ones
+            total_tasks = len(all_tasks)
+            while pending or completed < len(all_tasks):
+                # Wait for at least one task to complete
+                for future in list(pending.keys()):
+                    if future.ready():
+                        session_key_str = pending.pop(future)
+                        try:
+                            _, features, error = future.get()
+                            if error:
+                                logger.error(f"Session {session_key_str} failed: {error}")
+                            else:
+                                session_results[session_key_str] = features
+                                completed_keys.add(session_key_str)
+                        except Exception as e:
+                            logger.error(f"Session {session_key_str} failed with exception: {e}")
+                        
+                        completed += 1
+                        
+                        # Progress/ETA display
+                        elapsed = time.time() - start_time
+                        if completed > 0 and completed % 10 == 0:
+                            avg_time = elapsed / completed
+                            remaining = total_tasks - completed
+                            eta = avg_time * remaining
+                            logger.info(f"Progress: {completed}/{total_tasks} ({completed/total_tasks*100:.1f}%) | "
+                                        f"Elapsed: {elapsed:.1f}s | ETA: {eta:.1f}s | "
+                                        f"Avg: {avg_time:.1f}s/session")
+                        
+                        # Submit next task if available
+                        next_idx = len(completed_keys) + len(pending)
+                        if next_idx < len(all_tasks):
+                            next_key, next_args = all_tasks[next_idx]
+                            new_future = pool.apply_async(generate_session_task, (next_args,))
+                            pending[new_future] = next_key
+                        
+                        # Checkpoint periodically
+                        if completed % checkpoint_interval == 0:
+                            elapsed = time.time() - start_time
+                            checkpoint.update({
+                                "completed_sessions": list(completed_keys),
+                                "session_results": session_results,
+                                "next_session_id": session_id + len(completed_keys),
+                                "total_sessions": len(all_tasks) + len(completed_keys),
+                                "elapsed_time": elapsed,
+                                "workers": workers,
+                            })
+                            save_checkpoint(output_path, checkpoint)
+                        
+                        break  # Process one completion at a time
+    
+    # Collect results in deterministic order
+    all_sessions = []
+    for class_idx, class_name in enumerate(BB84_CLASSES):
+        for i in range(n_sessions_per_class):
+            session_key_str = session_key(class_idx, i, n_sessions_per_class)
+            if session_key_str in session_results:
+                features = session_results[session_key_str].copy()
+                features['session_id'] = session_id
+                all_sessions.append(features)
+                session_id += 1
     
     # Convert to DataFrame
     df = pd.DataFrame(all_sessions)
@@ -302,7 +523,8 @@ def generate_dataset(
     logger.info(f"Shape: {df.shape}")
     logger.info(f"Classes: {df['class_label'].value_counts().to_dict()}")
     
-    # Save metadata
+    # Save metadata with multiprocessing info
+    elapsed_total = time.time() - start_time
     metadata = {
         'n_sessions_total': len(df),
         'n_sessions_per_class': n_sessions_per_class,
@@ -315,6 +537,8 @@ def generate_dataset(
         'n_features': len(df.columns) - 1,  # Exclude class_label
         'feature_names': [c for c in df.columns if c != 'class_label'],
         'generation_time': time.time(),
+        'elapsed_seconds': elapsed_total,
+        'workers': workers,
         'attack_configs': ATTACK_CONFIGS,
     }
     
@@ -323,6 +547,12 @@ def generate_dataset(
         json.dump(metadata, f, indent=2, default=str)
     logger.info(f"Metadata saved to {meta_path}")
     
+    # Remove checkpoint on successful completion
+    checkpoint_path = output_path / CHECKPOINT_FILE
+    if checkpoint_path.exists():
+        checkpoint_path.unlink()
+    
+    logger.info(f"\nGeneration complete in {elapsed_total:.1f}s with {workers} workers")
     return str(csv_path)
 
 
@@ -333,11 +563,11 @@ def main():
     parser.add_argument('--n-transmissions', type=int, default=100000,
                         help='Number of qubit transmissions per session (default: 100000)')
     parser.add_argument('--window-size', type=int, default=50,
-                        help='Temporal window size in bits (default: 50)')
+                        help='Temporal window size in sifted bits (default: 50, paper W=50)')
     parser.add_argument('--stride', type=int, default=50,
-                        help='Window stride in bits (default: 50)')
-    parser.add_argument('--min-sifted-bits', type=int, default=200,
-                        help='Minimum sifted bits per window (default: 200)')
+                        help='Window stride in sifted bits (default: 50)')
+    parser.add_argument('--min-sifted-bits', type=int, default=30,
+                        help='Minimum sifted bits per window for valid QBER (default: 30)')
     parser.add_argument('--output-dir', type=str, default='data/bb84',
                         help='Output directory (default: data/bb84)')
     parser.add_argument('--log-level', type=str, default='INFO',
@@ -345,6 +575,8 @@ def main():
                         help='Logging level')
     parser.add_argument('--disable-progress', action='store_true',
                         help='Disable progress bars')
+    parser.add_argument('--workers', type=int, default=1,
+                        help='Number of worker processes for parallel generation (default: 1)')
     
     args = parser.parse_args()
     
@@ -357,6 +589,7 @@ def main():
         output_dir=args.output_dir,
         log_level=args.log_level,
         disable_progress=args.disable_progress,
+        workers=args.workers,
     )
 
 

@@ -193,6 +193,15 @@ def calculate_qber_statistics(
     mean_val = np.mean(valid_qber)
     std_val = np.std(valid_qber)
     
+    # Coefficient of variation: std/mean. When mean=0 and std=0, CV=0 (no variation).
+    # When mean=0 but std>0, CV is infinite/undefined -> NaN.
+    if mean_val > 0:
+        cv = float(std_val / mean_val)
+    elif mean_val == 0 and std_val == 0:
+        cv = 0.0  # No variation
+    else:
+        cv = np.nan  # mean=0 but std>0 -> infinite CV
+    
     return {
         "mean": float(mean_val),
         "median": float(np.median(valid_qber)),
@@ -202,7 +211,7 @@ def calculate_qber_statistics(
         "max": float(np.max(valid_qber)),
         "range": float(np.max(valid_qber) - np.min(valid_qber)),
         "iqr": float(np.percentile(valid_qber, 75) - np.percentile(valid_qber, 25)),
-        "cv": float(std_val / mean_val) if mean_val > 0 else np.nan,
+        "cv": cv,
         "skewness": float(_skewness(valid_qber)),
         "kurtosis": float(_kurtosis(valid_qber)),
     }
