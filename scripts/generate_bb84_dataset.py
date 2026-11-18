@@ -21,6 +21,7 @@ import signal
 import multiprocessing
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
+from collections import deque
 import numpy as np
 import pandas as pd
 
@@ -33,6 +34,103 @@ from temporal_qber.simulator import (
 from temporal_qber.temporal import extract_temporal_qber_features, SessionConfig as TemporalSessionConfig, WindowConfig
 from temporal_qber.logging_config import setup_logging, get_logger
 from temporal_qber.progress import create_progress_manager
+
+# ============================================================
+# Live Status Display
+# ============================================================
+
+class LiveStatusDisplay:
+    """Live-updating status display with global counter and recent activity log."""
+    
+    def __init__(self, total_sessions: int, logger, update_interval: int = 10, recent_size: int = 8):
+        self.total = total_sessions
+        self.logger = logger
+        self.update_interval = update_interval
+        self.recent = deque(maxlen=recent_size)
+        self.completed = 0
+        self.failed = 0
+        self.start_time = time.time()
+        self.last_update = 0
+        self._first_print = True
+        self._lines_printed = 0
+        
+    def add_completion(self, session_key: str, class_name: str, elapsed: float, success: bool = True):
+        """Record a completed session."""
+        self.completed += 1
+        if not success:
+            self.failed += 1
+        timestamp = time.strftime("%H:%M:%S")
+        status = "OK" if success else "ERR"
+        self.recent.append(f"[{timestamp}] {status} {class_name:25s} ({session_key})  {elapsed:.1f}s")
+        
+    def update(self, force: bool = False):
+        """Update the display (respects update_interval)."""
+        if not force and (self.completed - self.last_update) < self.update_interval:
+            return
+        self.last_update = self.completed
+        self._render()
+        
+    def _render(self):
+        """Render the live status display."""
+        elapsed = time.time() - self.start_time
+        pct = (self.completed / self.total * 100) if self.total > 0 else 0
+        avg_time = elapsed / self.completed if self.completed > 0 else 0
+        remaining = self.total - self.completed
+        eta = avg_time * remaining if remaining > 0 else 0
+        
+        # Build status line (ASCII for Windows compatibility)
+        bar_width = 40
+        filled = int(bar_width * self.completed / self.total) if self.total > 0 else 0
+        bar = "#" * filled + "-" * (bar_width - filled)
+        
+        status_line = (
+            #f"\r{'='*78}\n"
+            f"BB84 DATASET GENERATION  |  {self.completed:>5}/{self.total:<5}  ({pct:5.1f}%)  "
+            f"[{bar}]  OK:{self.completed-self.failed}  ERR:{self.failed}  "
+            f"Avg: {avg_time:.1f}s  ETA: {self._fmt_time(eta)}  Elapsed: {self._fmt_time(elapsed)}\n"
+            f"{'-'*78}\n"
+        )
+        
+        # Recent activity
+        if self.recent:
+            status_line += "RECENT:\n"
+            for line in self.recent:
+                status_line += f"  {line}\n"
+        else:
+            status_line += "RECENT: (waiting for first completion...)\n"
+            
+        status_line += f"{'='*78}"
+        
+        # Clear previous lines and print new status
+        if self._first_print:
+            sys.stdout.write(status_line + "\n")
+            self._first_print = False
+            self._lines_printed = status_line.count('\n') + 1
+        else:
+            # Move cursor up and clear lines
+            sys.stdout.write(f"\033[{self._lines_printed}A")
+            sys.stdout.write("\033[J")  # Clear from cursor to end
+            sys.stdout.write(status_line + "\n")
+            self._lines_printed = status_line.count('\n') + 1
+        sys.stdout.flush()
+        
+    def _fmt_time(self, seconds: float) -> str:
+        """Format seconds as H:MM:SS or M:SS."""
+        if seconds < 0:
+            return "??:??"
+        s = int(seconds)
+        h, m = divmod(s, 3600)
+        m, s = divmod(m, 60)
+        if h > 0:
+            return f"{h}:{m:02d}:{s:02d}"
+        return f"{m}:{s:02d}"
+        
+    def finalize(self):
+        """Final update and newline."""
+        self.update(force=True)
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
 
 # Paper's attack classes (8 classes: 1 normal + 7 attacks)
 BB84_CLASSES = [
@@ -193,10 +291,20 @@ def generate_session_task(args: Tuple) -> Tuple[str, Dict[str, Any], Optional[st
             include_partial_trailing=False,
         )
         
+        # Get loss sequence from result
+        loss_seq = getattr(result, 'loss_seq', None)
+        
         features = extract_temporal_qber_features(
             sifted_alice=result.sifted_alice_bits,
             sifted_bob=result.sifted_bob_bits,
             bob_detected=bob_detected_filtered,
+            # Basis-specific sifted bits for basis-dependent features
+            sifted_alice_rect=result.sifted_alice_rect,
+            sifted_bob_rect=result.sifted_bob_rect,
+            sifted_alice_diag=result.sifted_alice_diag,
+            sifted_bob_diag=result.sifted_bob_diag,
+            # Loss sequence for channel-interaction features
+            loss_seq=loss_seq,
             window_config=WindowConfig(
                 window_size=window_size,
                 stride=stride,
@@ -395,6 +503,10 @@ def generate_dataset(
     
     logger.info(f"Total sessions to generate: {len(all_tasks)}")
     
+    # Initialize live status display
+    total_to_generate = len(all_tasks)
+    status = LiveStatusDisplay(total_to_generate, logger, update_interval=10, recent_size=8)
+    
     # Generate sessions
     all_sessions = []
     session_results = {}  # session_key -> features
@@ -407,15 +519,18 @@ def generate_dataset(
         for i, (session_key_str, task_args) in enumerate(all_tasks):
             session_key_str, features, error = generate_session_task(task_args)
             
+            class_name = task_args[1]
+            session_elapsed = time.time() - start_time
+            
             if error:
                 logger.error(f"Session {session_key_str} failed: {error}")
+                status.add_completion(session_key_str, class_name, 0, success=False)
             else:
                 session_results[session_key_str] = features
                 completed_keys.add(session_key_str)
+                status.add_completion(session_key_str, class_name, session_elapsed, success=True)
             
-            # Update progress
-            if progress.enabled:
-                pass  # progress handled by caller
+            status.update()
             
             # Checkpoint periodically
             if (i + 1) % checkpoint_interval == 0:
@@ -435,10 +550,6 @@ def generate_dataset(
         max_queue_size = workers * 4
         
         with multiprocessing.Pool(processes=workers) as pool:
-            # Use imap_unordered for better memory efficiency
-            # but we need ordered results for deterministic output
-            # So we'll use a queue to maintain order
-            
             # Submit tasks in batches
             pending = {}
             completed = 0
@@ -447,7 +558,7 @@ def generate_dataset(
             for i, (session_key_str, task_args) in enumerate(all_tasks):
                 if i < max_queue_size:
                     future = pool.apply_async(generate_session_task, (task_args,))
-                    pending[future] = session_key_str
+                    pending[future] = (session_key_str, task_args[1])  # store class_name too
                 else:
                     break
             
@@ -457,35 +568,29 @@ def generate_dataset(
                 # Wait for at least one task to complete
                 for future in list(pending.keys()):
                     if future.ready():
-                        session_key_str = pending.pop(future)
+                        session_key_str, class_name = pending.pop(future)
                         try:
                             _, features, error = future.get()
                             if error:
                                 logger.error(f"Session {session_key_str} failed: {error}")
+                                status.add_completion(session_key_str, class_name, 0, success=False)
                             else:
                                 session_results[session_key_str] = features
                                 completed_keys.add(session_key_str)
+                                status.add_completion(session_key_str, class_name, time.time() - start_time, success=True)
                         except Exception as e:
                             logger.error(f"Session {session_key_str} failed with exception: {e}")
+                            status.add_completion(session_key_str, class_name, 0, success=False)
                         
                         completed += 1
-                        
-                        # Progress/ETA display
-                        elapsed = time.time() - start_time
-                        if completed > 0 and completed % 10 == 0:
-                            avg_time = elapsed / completed
-                            remaining = total_tasks - completed
-                            eta = avg_time * remaining
-                            logger.info(f"Progress: {completed}/{total_tasks} ({completed/total_tasks*100:.1f}%) | "
-                                        f"Elapsed: {elapsed:.1f}s | ETA: {eta:.1f}s | "
-                                        f"Avg: {avg_time:.1f}s/session")
+                        status.update()
                         
                         # Submit next task if available
                         next_idx = len(completed_keys) + len(pending)
                         if next_idx < len(all_tasks):
                             next_key, next_args = all_tasks[next_idx]
                             new_future = pool.apply_async(generate_session_task, (next_args,))
-                            pending[new_future] = next_key
+                            pending[new_future] = (next_key, next_args[1])
                         
                         # Checkpoint periodically
                         if completed % checkpoint_interval == 0:
@@ -501,6 +606,9 @@ def generate_dataset(
                             save_checkpoint(output_path, checkpoint)
                         
                         break  # Process one completion at a time
+    
+    # Finalize status display
+    status.finalize()
     
     # Collect results in deterministic order
     all_sessions = []

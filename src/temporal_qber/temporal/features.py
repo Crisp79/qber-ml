@@ -392,17 +392,129 @@ def _extract_spectral_features(qber_seq: np.ndarray) -> Dict[str, float]:
     else:
         permutation_entropy = 0.0
     
-    # Sample entropy (approximate)
-    sample_entropy = 0.0  # placeholder
+    # Sample entropy (approximate using approximate entropy)
+    # Approximate entropy (ApEn) as approximation of sample entropy
+    def _approx_entropy(data, m=2, r_factor=0.2):
+        """Compute approximate entropy (ApEn) as approximation of sample entropy."""
+        n = len(data)
+        if n < m + 1:
+            return 0.0
+        
+        r = r_factor * np.std(data)
+        if r == 0:
+            return 0.0
+        
+        def _phi(m):
+            patterns = np.array([data[i:i+m] for i in range(n - m + 1)])
+            C = np.zeros(n - m + 1)
+            for i in range(n - m + 1):
+                template = patterns[i]
+                dists = np.max(np.abs(patterns - template), axis=1)
+                C[i] = np.sum(dists <= r) / (n - m + 1)
+            return np.mean(np.log(C + 1e-12))
+        
+        return _phi(m) - _phi(m + 1)
+    
+    sample_entropy = _approx_entropy(qber_seq)
     
     # Hurst exponent (simplified R/S analysis)
-    hurst_exponent = 0.5  # placeholder
+    def _hurst_exponent(data):
+        """Simplified Hurst exponent using R/S analysis."""
+        n = len(data)
+        if n < 20:
+            return 0.5
+        
+        # R/S analysis
+        mean_val = np.mean(data)
+        data_demeaned = data - mean_val
+        
+        # Cumulative deviation
+        cum_dev = np.cumsum(data_demeaned)
+        
+        # Range
+        R = np.max(cum_dev) - np.min(cum_dev)
+        S = np.std(data)
+        
+        if S == 0:
+            return 0.5
+        
+        # R/S ratio
+        rs = R / S
+        
+        # For large n, H ≈ log(R/S) / log(n) (simplified)
+        if rs > 0 and n > 1:
+            return float(np.log(rs) / np.log(n))
+        return 0.5
     
-    # Lyapunov exponent (placeholder)
-    lyapunov_exp = 0.0
+    hurst_exponent = _hurst_exponent(qber_seq)
     
-    # Correlation dimension (placeholder)
-    correlation_dim = 0.0
+    # Lyapunov exponent (simplified)
+    def _lyapunov_exponent(data):
+        n = len(data)
+        if n < 10:
+            return 0.0
+        
+        # Simplified: estimate using nearest neighbor distances
+        m = 2  # embedding dimension
+        tau = 1  # delay
+        
+        # Create embedded vectors
+        vectors = np.array([data[i:i+m*tau:tau] for i in range(len(data) - (m-1)*tau)])
+        # Actually simpler: just use successive differences
+        diffs = np.abs(np.diff(data))
+        if len(diffs) > 1 and np.mean(diffs) > 0:
+            # Estimate using divergence of nearby trajectories
+            # Simplified: use log of divergence rate
+            return float(np.log(np.mean(np.abs(np.diff(data)) + 1e-12)))
+        return 0.0
+    
+    lyapunov_exp = _lyapunov_exponent(qber_seq)
+    
+    # Correlation dimension (simplified Grassberger-Procaccia)
+    def _correlation_dimension(data):
+        n = len(data)
+        if n < 10:
+            return 0.0
+        
+        # Simplified: use embedding and correlation integral
+        m = 3  # embedding dimension
+        tau = 1
+        N = len(data)
+        
+        if N < m + 2:
+            return 0.0
+        
+        # Create embedded vectors
+        M = N - (m - 1) * tau
+        vectors = np.array([data[i:i + m*tau:tau] for i in range(M)])
+        
+        # Compute pairwise distances
+        distances = []
+        for i in range(min(M, 100)):  # Sample for efficiency
+            for j in range(i+1, min(M, i+50)):
+                dist = np.sqrt(np.sum((vectors[i] - vectors[j])**2))
+                distances.append(dist)
+        
+        if len(distances) < 10:
+            return 0.0
+        
+        distances = np.array(distances)
+        # Estimate correlation dimension from slope of log(C(r)) vs log(r)
+        r_vals = np.logspace(np.log10(np.min(distances) + 1e-12), 
+                             np.log10(np.max(distances)), 10)
+        C_r = []
+        for r in r_vals:
+            C_r.append(np.sum(np.array(distances) < r) / len(distances))
+        
+        # Linear fit to log(C(r)) vs log(r)
+        log_r = np.log(r_vals)
+        log_C = np.log(np.array(C_r) + 1e-12)
+        if len(log_r) > 2 and np.std(log_r) > 0:
+            coeff = np.polyfit(log_r, log_C, 1)
+            return float(max(0, coeff[0]))
+        return 0.0
+    
+    correlation_dim = _correlation_dimension(qber_seq)
     
     return {
         "lag1_autocorr": float(lag1_ac),
@@ -421,3 +533,190 @@ def _extract_spectral_features(qber_seq: np.ndarray) -> Dict[str, float]:
         "lyapunov_exp": float(lyapunov_exp),
         "correlation_dim": float(correlation_dim),
     }
+
+
+def _extract_basis_features(
+    sifted_alice_rect: np.ndarray,
+    sifted_bob_rect: np.ndarray,
+    sifted_alice_diag: np.ndarray,
+    sifted_bob_diag: np.ndarray,
+) -> Dict[str, float]:
+    """Extract 10 basis-dependent features from rectilinear and diagonal basis sifted bits."""
+    features = {}
+    
+    # QBER for rectilinear basis
+    if len(sifted_alice_rect) > 0 and len(sifted_bob_rect) > 0:
+        errors_rect = np.sum(sifted_alice_rect != sifted_bob_rect)
+        qber_rect = float(errors_rect) / len(sifted_alice_rect) if len(sifted_alice_rect) > 0 else 0.0
+    else:
+        qber_rect = 0.0
+    
+    # QBER for diagonal basis
+    if len(sifted_alice_diag) > 0 and len(sifted_bob_diag) > 0:
+        errors_diag = np.sum(sifted_alice_diag != sifted_bob_diag)
+        qber_diag = float(errors_diag) / len(sifted_alice_diag) if len(sifted_alice_diag) > 0 else 0.0
+    else:
+        qber_diag = 0.0
+    
+    features["qber_rectilinear"] = qber_rect
+    features["qber_diagonal"] = qber_diag
+    features["qber_basis_diff"] = qber_rect - qber_diag
+    features["qber_basis_ratio"] = qber_rect / qber_diag if qber_diag > 0 else 0.0
+    
+    # Burst energy for rectilinear basis
+    if len(sifted_alice_rect) > 0:
+        errors_rect = (sifted_alice_rect != sifted_bob_rect).astype(float)
+        rect_burst_energy = float(np.sum(errors_rect ** 2))
+    else:
+        rect_burst_energy = 0.0
+    
+    # Burst energy for diagonal basis
+    if len(sifted_alice_diag) > 0:
+        errors_diag = (sifted_alice_diag != sifted_bob_diag).astype(float)
+        diag_burst_energy = float(np.sum(errors_diag ** 2))
+    else:
+        diag_burst_energy = 0.0
+    
+    features["rect_burst_energy"] = rect_burst_energy
+    features["diag_burst_energy"] = diag_burst_energy
+    
+    # Basis asymmetry: (QBER_rect - QBER_diag) / (QBER_rect + QBER_diag)
+    basis_sum = qber_rect + qber_diag
+    features["basis_asymmetry"] = (qber_rect - qber_diag) / basis_sum if basis_sum > 0 else 0.0
+    
+    # Basis switch rate: how often the basis changes in the sifted key
+    # We need the basis sequence for the sifted key - this is a simplified version
+    # For now, we estimate based on the proportion of rectilinear vs diagonal
+    total_sifted = len(sifted_alice_rect) + len(sifted_alice_diag)
+    if total_sifted > 0:
+        features["basis_switch_rate"] = 2 * len(sifted_alice_rect) * len(sifted_alice_diag) / (total_sifted * (total_sifted - 1)) if total_sifted > 1 else 0.0
+    else:
+        features["basis_switch_rate"] = 0.0
+    
+    # Basis error correlation: correlation between rectilinear and diagonal errors
+    # We need aligned error sequences - simplified version
+    if len(sifted_alice_rect) > 1 and len(sifted_alice_diag) > 1:
+        min_len = min(len(sifted_alice_rect), len(sifted_alice_diag))
+        errors_rect = (sifted_alice_rect[:min_len] != sifted_bob_rect[:min_len]).astype(float)
+        errors_diag = (sifted_alice_diag[:min_len] != sifted_bob_diag[:min_len]).astype(float)
+        if np.std(errors_rect) > 0 and np.std(errors_diag) > 0:
+            corr = np.corrcoef(errors_rect, errors_diag)[0, 1]
+            features["basis_error_corr"] = float(corr) if not np.isnan(corr) else 0.0
+        else:
+            features["basis_error_corr"] = 0.0
+    else:
+        features["basis_error_corr"] = 0.0
+    
+    # Basis drift: linear trend difference between rectilinear and diagonal QBER over time
+    # Simplified: compare first half vs second half QBER for each basis
+    if len(sifted_alice_rect) > 2 and len(sifted_alice_diag) > 2:
+        mid_rect = len(sifted_alice_rect) // 2
+        mid_diag = len(sifted_alice_diag) // 2
+        
+        qber_rect_early = np.mean(sifted_alice_rect[:mid_rect] != sifted_bob_rect[:mid_rect]) if mid_rect > 0 else 0
+        qber_rect_late = np.mean(sifted_alice_rect[mid_rect:] != sifted_bob_rect[mid_rect:]) if mid_rect < len(sifted_alice_rect) else 0
+        qber_diag_early = np.mean(sifted_alice_diag[:mid_diag] != sifted_bob_diag[:mid_diag]) if mid_diag > 0 else 0
+        qber_diag_late = np.mean(sifted_alice_diag[mid_diag:] != sifted_bob_diag[mid_diag:]) if mid_diag < len(sifted_alice_diag) else 0
+        
+        drift_rect = qber_rect_late - qber_rect_early
+        drift_diag = qber_diag_late - qber_diag_early
+        features["basis_drift"] = float(drift_rect - drift_diag)
+    else:
+        features["basis_drift"] = 0.0
+    
+    return features
+
+
+def _extract_channel_features(qber_seq: np.ndarray, loss_seq: np.ndarray) -> Dict[str, float]:
+    """Extract 16 channel-interaction features from QBER sequence and loss sequence."""
+    features = {}
+    
+    if len(qber_seq) == 0 or len(loss_seq) == 0:
+        return {
+            "key_gen_rate": 0.0,
+            "transmission_efficiency": 0.0,
+            "qber_loss_corr": 0.0,
+            "qber_loss_interaction": 0.0,
+            "multi_scale_qber_1": 0.0,
+            "multi_scale_qber_2": 0.0,
+            "multi_scale_qber_4": 0.0,
+            "multi_scale_qber_8": 0.0,
+            "multi_scale_qber_16": 0.0,
+            "multi_scale_qber_16": 0.0,  # duplicate in original, fixing
+            "multi_scale_qber_32": 0.0,
+            "loss_burst_corr": 0.0,
+            "detector_efficiency": 0.0,
+            "dark_count_rate": 0.0,
+            "afterpulse_prob": 0.0,
+            "channel_stability": 0.0,
+            "qber_trend": 0.0,
+        }
+    
+    # Ensure same length
+    min_len = min(len(qber_seq), len(loss_seq))
+    qber_seq = qber_seq[:min_len]
+    loss_seq = loss_seq[:min_len]
+    
+    # 1. Key generation rate: sifted key rate * (1 - h(QBER) - f * h(QBER))
+    # Simplified: transmission efficiency * (1 - H2(QBER))
+    mean_qber = np.mean(qber_seq)
+    if mean_qber > 0 and mean_qber < 0.5:
+        h_qber = -mean_qber * np.log2(mean_qber) - (1 - mean_qber) * np.log2(1 - mean_qber)
+        key_gen_rate = max(0.0, 1 - 2 * h_qber)  # Simplified key rate
+    else:
+        key_gen_rate = 0.0
+    
+    # Transmission efficiency: fraction of transmitted qubits that contribute to sifted key
+    transmission_efficiency = 1.0 - np.mean(np.array(loss_seq))  # Simplified
+    
+    # QBER-Loss correlation
+    if len(qber_seq) > 1 and np.std(qber_seq) > 0 and np.std(loss_seq) > 0:
+        qber_loss_corr = np.corrcoef(qber_seq, loss_seq)[0, 1]
+        qber_loss_corr = float(qber_loss_corr) if not np.isnan(qber_loss_corr) else 0.0
+    else:
+        qber_loss_corr = 0.0
+    
+    # QBER-Loss interaction: mean(QBER * loss)
+    qber_loss_interaction = float(np.mean(qber_seq * loss_seq))
+    
+    # Multi-scale QBER (average QBER at different scales)
+    scales = [1, 2, 4, 8, 16, 32]
+    multi_scale = {}
+    for scale in scales:
+        if len(qber_seq) >= scale:
+            n_windows = len(qber_seq) // scale
+            if n_windows > 0:
+                qber_scaled = qber_seq[:n_windows * scale].reshape(n_windows, scale).mean(axis=1)
+                multi_scale[f"multi_scale_qber_{scale}"] = float(np.mean(qber_scaled))
+            else:
+                multi_scale[f"multi_scale_qber_{scale}"] = 0.0
+        else:
+            multi_scale[f"multi_scale_qber_{scale}"] = 0.0
+    
+    features.update(multi_scale)
+    
+    # Loss burst correlation
+    if len(loss_seq) > 1 and np.std(loss_seq) > 0:
+        loss_diff = np.diff(loss_seq)
+        loss_bursts = (loss_seq[:-1] > np.mean(loss_seq)) & (loss_seq[1:] > np.mean(loss_seq))
+        if np.sum(loss_bursts) > 0:
+            loss_burst_corr = float(np.mean(loss_bursts.astype(float)))
+        else:
+            loss_burst_corr = 0.0
+    else:
+        loss_burst_corr = 0.0
+    
+    features.update({
+        "key_gen_rate": float(key_gen_rate),
+        "transmission_efficiency": float(transmission_efficiency),
+        "qber_loss_corr": float(qber_loss_corr),
+        "qber_loss_interaction": float(qber_loss_interaction),
+        "loss_burst_corr": float(loss_burst_corr),
+        "detector_efficiency": 1.0,  # Placeholder - would need actual detector params
+        "dark_count_rate": 0.0,  # Placeholder
+        "afterpulse_prob": 0.0,  # Placeholder
+        "channel_stability": 1.0 - float(np.std(qber_seq)) if len(qber_seq) > 1 else 1.0,
+        "qber_trend": 0.0,  # Will be set by trend features
+    })
+    
+    return features

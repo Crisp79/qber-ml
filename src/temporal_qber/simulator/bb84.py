@@ -52,6 +52,15 @@ class BB84Result:
     sifted_key_length: int
     sifting_efficiency: float
     
+    # Basis-specific sifted bits (for basis-dependent features)
+    sifted_alice_rect: np.ndarray
+    sifted_bob_rect: np.ndarray
+    sifted_alice_diag: np.ndarray
+    sifted_bob_diag: np.ndarray
+    
+    # Per-window loss sequence (for channel-interaction features)
+    loss_seq: np.ndarray
+    
     # QBER
     n_sifted_errors: int
     qber: float
@@ -247,6 +256,19 @@ class BB84Protocol:
         sifted_alice_bits = alice_bits[valid_mask]
         sifted_bob_bits = bob_outcomes[valid_mask]
         
+        # Track basis-specific sifted bits for basis-dependent features
+        sifted_rect_mask = valid_mask & (alice_bases == Basis.Z)
+        sifted_diag_mask = valid_mask & (alice_bases == Basis.X)
+        
+        sifted_alice_rect = alice_bits[sifted_rect_mask]
+        sifted_bob_rect = bob_outcomes[sifted_rect_mask]
+        sifted_alice_diag = alice_bits[sifted_diag_mask]
+        sifted_bob_diag = bob_outcomes[sifted_diag_mask]
+        
+        # Track per-transmission loss for channel-interaction features
+        # loss = 1 if photon lost (not detected), 0 if detected
+        loss_seq = (~bob_detected).astype(np.float64)
+        
         n_matching_bases = int(np.sum(matching_bases_mask))
         sifted_key_length = len(sifted_alice_bits)
         sifting_efficiency = sifted_key_length / self.n_transmissions if self.n_transmissions > 0 else 0.0
@@ -301,6 +323,15 @@ class BB84Protocol:
             sifted_bob_bits=sifted_bob_bits,
             sifted_key_length=sifted_key_length,
             sifting_efficiency=sifting_efficiency,
+            
+            # Basis-specific sifted bits
+            sifted_alice_rect=sifted_alice_rect,
+            sifted_bob_rect=sifted_bob_rect,
+            sifted_alice_diag=sifted_alice_diag,
+            sifted_bob_diag=sifted_bob_diag,
+            
+            # Per-transmission loss sequence
+            loss_seq=loss_seq,
             
             n_sifted_errors=n_sifted_errors,
             qber=qber,
