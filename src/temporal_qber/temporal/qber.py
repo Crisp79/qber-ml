@@ -351,6 +351,7 @@ def calculate_trend_features(
     
     return {
         "linear_slope": float(slope),
+        "qber_trend": float(slope),
         "trend_direction": float(trend_direction),
         "r_squared": float(r_squared),
         "early_late_diff": float(early_late_diff),

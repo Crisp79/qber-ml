@@ -191,8 +191,21 @@ class FakeStateAttack(BaseAttack):
         # Eve doesn't know Alice's basis, so she guesses or uses a fixed strategy
         eve_basis = self.rng.integers(0, 2)  # Random basis guess
         
-        # Eve prepares a fake state
-        fake_state = self._create_fake_state(eve_basis, self.rng.integers(0, 2))
+        # Eve prepares a fake state.
+        # For detector_mismatch subtype, Eve sends Alice's actual state so Bob's
+        # detector mismatch causes bias, not random outcomes (which would give 50% QBER).
+        # For phase_remapped and combined subtypes, Eve sends a phase-shifted copy
+        # of Alice's state.
+        if self.attack_subtype in ("detector_mismatch", "intensity", "wavelength"):
+            # Send Alice's actual state (channel loss / detector effects handle the rest)
+            fake_state = state.copy()
+        elif self.attack_subtype == "phase_remapped":
+            fake_state = self._apply_phase_shift(state.copy(), alice_basis)
+        elif self.attack_subtype == "time_bin":
+            fake_state = state.copy()
+        else:  # combined
+            # Apply all effects to Alice's state
+            fake_state = self._apply_phase_shift(state.copy(), alice_basis)
         
         # Check if this is a multi-photon pulse
         is_multi_photon = self.rng.random() < self.multi_photon_prob

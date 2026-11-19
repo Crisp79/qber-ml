@@ -76,8 +76,13 @@ class Bob:
         # Check for dark count first (independent of photon arrival)
         is_dark_count = self.rng.random() < self.dark_count_prob
         
-        # Check photon detection
-        detected_photon = self.rng.random() < self.detection_efficiency
+        # Check photon detection - only if state has non-zero norm
+        # (zero-norm state means photon was lost, e.g. beam splitting sent it to Eve)
+        state_norm = np.linalg.norm(state)
+        if state_norm > 0:
+            detected_photon = self.rng.random() < self.detection_efficiency
+        else:
+            detected_photon = False  # No photon to detect
         
         if is_dark_count:
             # Dark count: random outcome regardless of photon
@@ -109,7 +114,7 @@ class Bob:
     
     def measure_batch(self, states: np.ndarray, bases: Optional[np.ndarray] = None) -> List[BobMeasurement]:
         """
-        Measure a batch of quantum states.
+        Measure a batch of quantum states (vectorized).
         
         Args:
             states: Array of state vectors (n, 2) complex
@@ -125,11 +130,54 @@ class Bob:
         elif len(bases) != n:
             raise ValueError(f"Bases length {len(bases)} != states length {n}")
         
+        # Calculate measurement probabilities for all sessions at once
+        # Z basis: prob_0 = |state[0]|^2, prob_1 = |state[1]|^2
+        # X basis: prob_0 = |⟨+|ψ⟩|^2, prob_1 = |⟨-|ψ⟩|^2
+        prob_0_z = np.abs(states[:, 0]) ** 2
+        prob_1_z = np.abs(states[:, 1]) ** 2
+        
+        plus = (states[:, 0] + states[:, 1]) / np.sqrt(2)
+        minus = (states[:, 0] - states[:, 1]) / np.sqrt(2)
+        prob_0_x = np.abs(plus) ** 2
+        prob_1_x = np.abs(minus) ** 2
+        
+        # Select probabilities based on basis choice
+        prob_0 = np.where(bases == 0, prob_0_z, prob_0_x)
+        prob_1 = np.where(bases == 0, prob_1_z, prob_1_x)
+        
+        # Dark count check (independent of photon arrival)
+        is_dark_count = self.rng.random(n) < self.dark_count_prob
+        
+        # Photon detection
+        detected_photon = self.rng.random(n) < self.detection_efficiency
+        
+        # Determine outcomes
+        outcomes = np.zeros(n, dtype=np.int8)
+        
+        # Dark count: random outcome
+        dark_mask = is_dark_count
+        outcomes[dark_mask] = self.rng.integers(0, 2, size=int(np.sum(dark_mask)))
+        
+        # Normal photon detection
+        detect_mask = detected_photon & ~is_dark_count
+        outcomes[detect_mask] = (self.rng.random(int(np.sum(detect_mask))) < prob_1[detect_mask]).astype(np.int8)
+        
+        # No detection event
+        detected = detected_photon | is_dark_count
+        
+        # Build result list
         measurements = []
         for i in range(n):
-            measurement = self.measure(states[i], int(bases[i]))
-            measurements.append(measurement)
+            measurements.append(BobMeasurement(
+                basis=int(bases[i]),
+                outcome=int(outcomes[i]),
+                prob_0=float(prob_0[i]),
+                prob_1=float(prob_1[i]),
+                detected=bool(detected[i]),
+                is_dark_count=bool(is_dark_count[i])
+            ))
         
+        self._measurements.extend(measurements)
         return measurements
     
     def get_measurements(self) -> List[BobMeasurement]:

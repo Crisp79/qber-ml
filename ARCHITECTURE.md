@@ -16,8 +16,8 @@ Verified dataset properties:
 - 44 raw features → 45 model features after one-hot encoding `circuit_type`
 - Features include circuit structure, output distribution statistics, entropy, purity/diversity metrics, **attack-specific simulator parameters** (e.g., `swap_intensity`, `dp_error_rate`, `mt_flip_prob`), and execution metadata
 
-### Track B — BB84 Temporal-QBER Detection (PARTIALLY IMPLEMENTED)
-The planned direction is a BB84 simulation and temporal feature pipeline inspired by *Beyond the QBER Threshold: A Temporal QBER Based Machine Learning Framework for Multi Attack Detection in BB84 QKD* (arXiv:2608.04047v1).
+### Track B — BB84 Temporal-QBER Detection (IMPLEMENTED)
+The BB84 simulation and temporal-QBER detection pipeline inspired by *Beyond the QBER Threshold: A Temporal QBER Based Machine Learning Framework for Multi Attack Detection in BB84 QKD* (arXiv:2608.04047v1).
 
 Current implementation status:
 - ✅ BB84 state preparation (Alice)
@@ -30,9 +30,28 @@ Current implementation status:
 - ✅ Temporal QBER extraction per window
 - ✅ 63 physics-informed temporal-QBER features (statistical, burst, spectral, basis-dependent, channel-interaction)
 - ✅ Intercept-resend attack (full and partial)
-- ❌ Remaining 6 paper attacks: PNS, Beam Splitting, Time-Shift, Trojan Horse, Quantum Cloning, Fake State
-- ❌ Multi-class attack dataset generation from BB84 simulations
-- ❌ Model training and evaluation on BB84 simulation data
+- ✅ Photon Number Splitting (PNS) — `pns`, `pns_storage` variants
+- ✅ Beam Splitting — `beam_splitting`, `beam_splitting_fixed` variants
+- ✅ Time-Shift — `time_shift`, `time_shift_intercept` variants
+- ✅ Trojan Horse — `trojan_horse`, `trojan_horse_active` variants
+- ✅ Quantum Cloning — `quantum_cloning`, `quantum_cloning_measure` variants
+- ✅ Fake State — `fake_state` with multiple subtypes
+- ✅ Multi-class BB84 simulation dataset generation — `scripts/generate_bb84_dataset.py`
+- ✅ ML training/evaluation on BB84 simulation data — `scripts/run_bb84_pipeline.py`
+- ✅ Session-level multiprocessing with checkpoint/resume
+- ✅ Per-session attack & channel parameter randomization (anti-shortcut-learning)
+- ✅ Basis-specific sifted bits tracking
+- ✅ Per-session loss sequence tracking
+- ✅ Threshold/CUSUM/EWMA/Page-Hinkley baselines on temporal QBER
+- ✅ SHAP explanations and feature-group ablation on BB84 data
+
+**⚠️ Known BB84 Simulator Bugs** (identified in dataset analysis):
+- Bob treats zero-norm states as detections — beam_splitting QBER shows ~0.83% but code adds no errors
+- fake_state has QBER of exactly 50% — detector-mismatch attack shouldn't make bits fully random
+- quantum_cloning gives 14.8% QBER, not 16.7% (1/6) as expected
+- `key_gen_rate` is 0 for normal class — should be highest
+
+**Accuracy Ceiling**: `normal`, `photon_number_splitting`, and `trojan_horse` all produce QBER ≈ 0 (indistinguishable); `intercept_resend` and `time_shift` both produce QBER ≈ 0.25 (indistinguishable). Model accuracy cannot exceed ~62.5% without simulator fixes.
 
 **Do not combine QAD results with BB84 results. They are different tasks, datasets, and threat models.**
 
@@ -72,7 +91,9 @@ QBER-ML/
 │   ├── simulate_bb84.py          # BB84 simulation CLI
 │   ├── extract_temporal_features.py  # Temporal QBER feature extraction CLI
 │   ├── build_research_artifacts.py # Orchestration script
-│   └── generate_report.py        # PDF report generator
+│   ├── generate_report.py        # PDF report generator
+│   ├── generate_bb84_dataset.py  # BB84 dataset generation (multiprocessing, checkpoint/resume, param randomization)
+│   └── run_bb84_pipeline.py      # BB84 ML pipeline (training, evaluation, SHAP, ablation, baselines)
 ├── src/
 │   └── temporal_qber/           # Main Python package
 │       ├── __init__.py
@@ -80,7 +101,7 @@ QBER-ML/
 │       ├── dataset.py            # QAD loading, preprocessing, splitting, scaling
 │       ├── features.py           # QAD feature groups; paper's 63 temporal-QBER features (reference)
 │       ├── train.py              # Model creation, training, CV, persistence
-│       ├── evaluate.py           # Metrics, confusion matrices, baselines, plotting
+│       ├── evaluate.py           # Metrics, confusion matrices, baselines (incl. per-session BB84 baselines)
 │       ├── explain.py            # SHAP, feature-group ablation
 │       ├── predict.py            # Inference API
 │       ├── logging_config.py     # Centralized logging with file persistence
@@ -101,11 +122,18 @@ QBER-ML/
 │           └── attacks/
 │               ├── __init__.py
 │               ├── base.py       # Attack base classes
-│               └── intercept_resend.py  # Full & partial intercept-resend
+│               ├── intercept_resend.py   # Full & partial intercept-resend
+│               ├── pns.py            # Photon Number Splitting
+│               ├── beam_splitting.py     # Beam splitting attack
+│               ├── time_shift.py         # Time-shift attack
+│               ├── trojan_horse.py       # Trojan Horse attack
+│               ├── quantum_cloning.py    # Quantum Cloning attack
+│               └── fake_state.py         # Fake State attack
 ├── tests/
 │   ├── test_invariants.py        # QAD pipeline invariants (leakage, splitting, groups)
 │   ├── test_bb84.py              # BB84 simulator correctness
 │   ├── test_channel.py           # Quantum channel models
+│   ├── test_bb84_leakage.py      # BB84 leakage detection & parameter randomization
 │   └── test_logging_progress_experiment.py  # Logging, progress, tracking
 ├── main.py                       # Not used (entry point via scripts)
 ├── pyproject.toml
@@ -231,27 +259,33 @@ uv run python scripts/generate_report.py
 | **Directory** | `src/temporal_qber/dataset.py`, `train.py`, `evaluate.py`, `explain.py` | `src/temporal_qber/simulator/`, `temporal/` |
 | **Data** | `data/qad/` (external CSV) | Simulated on-the-fly |
 | **Features** | 45 circuit/statistical features | 63 temporal-QBER features (paper) |
-| **Classes** | 8 quantum-circuit attacks | 8 BB84 attacks (7 implemented: 1 normal + 1 intercept-resend + partial) |
-| **Scripts** | `run_pipeline.py`, `test_pipeline.py` | `simulate_bb84.py`, `extract_temporal_features.py` |
+| **Classes** | 8 quantum-circuit attacks | 8 BB84 attacks (1 normal + 7 attacks) |
+| **Scripts** | `run_pipeline.py`, `test_pipeline.py` | `generate_bb84_dataset.py`, `run_bb84_pipeline.py`, `simulate_bb84.py`, `extract_temporal_features.py` |
 | **Notebook** | `qad_experiments.ipynb` | None yet |
-| **Results** | `results/evaluation_results.json` | None yet |
-| **Status** | **Complete pipeline** | **Simulator foundation only** |
+| **Results** | `results/evaluation_results.json` | `results/bb84/evaluation_results.json` |
+| **Status** | **Complete pipeline** | **Complete pipeline** |
 
 ## 9. Architectural Risks (Confirmed)
 
-1. **Attack-specific metadata leakage:** QAD features include `swap_intensity`, `dp_error_rate`, `mt_flip_prob`, `ad_damping_param`, etc. that directly encode attack type and intensity. Models achieve >95% accuracy largely by reading these simulator parameters. This is documented in the notebook and report.
+1. **QAD Attack-specific metadata leakage:** QAD features include `swap_intensity`, `dp_error_rate`, `mt_flip_prob`, `ad_damping_param`, etc. that directly encode attack type and intensity. Models achieve >95% accuracy largely by reading these simulator parameters. This is documented in the notebook and report.
 
-2. **Preprocessing fitted before CV folds:** `StandardScaler` fitted on full `X_train` before CV. Validation fold scaling is influenced by held-out data. Tree models unaffected; SVM double-scales.
+2. **QAD Preprocessing fitted before CV folds:** `StandardScaler` fitted on full `X_train` before CV. Validation fold scaling is influenced by held-out data. Tree models unaffected; SVM double-scales.
 
-3. **Notebook outputs stale:** Notebook shows results from 10k-sample run; full 1M-sample results may differ.
+3. **BB84 Simulator Bugs** (identified in dataset analysis):
+   - Bob treats zero-norm states as detections — beam_splitting QBER ~0.83% but code adds no errors
+   - fake_state QBER exactly 50% — detector-mismatch attack shouldn't randomize bits
+   - quantum_cloning QBER 14.8%, not expected 16.7% (1/6)
+   - `key_gen_rate` is 0 for normal class — should be highest
 
-4. **Report tables manually maintained:** `generate_report.py` regenerates tables from `evaluation_results.json`, but the main LaTeX text references specific numbers that must be kept in sync.
+4. **BB84 Accuracy Ceiling** (~62.5%): `normal`, `photon_number_splitting`, `trojan_horse` all produce QBER ≈ 0; `intercept_resend`, `time_shift` both produce QBER ≈ 0.25. Model accuracy cannot exceed ~62.5% without simulator fixes.
 
-5. **QAD/BB84 terminology mixing:** README title says "Temporal-QBER Attack Detection for BB84 QKD" but current implementation is QAD classification. This is clarified in the notebook but the README title is misleading.
+5. **Notebook outputs stale:** Notebook shows results from 10k-sample run; full 1M-sample results may differ.
 
-6. **Dataset variants:** Balanced vs. unbalanced QAD variants exist; only balanced used in current experiments.
+6. **Report tables manually maintained:** `generate_report.py` regenerates tables from `evaluation_results.json`, but the main LaTeX text references specific numbers that must be kept in sync.
 
-7. **SVM Pipeline double-scaling:** Data pre-scaled by external `StandardScaler`, then SVM `Pipeline` applies another `StandardScaler`.
+7. **Dataset variants:** Balanced vs. unbalanced QAD variants exist; only balanced used in current experiments.
+
+8. **SVM Pipeline double-scaling:** Data pre-scaled by external `StandardScaler`, then SVM `Pipeline` applies another `StandardScaler`.
 
 ## 10. Maintenance
 

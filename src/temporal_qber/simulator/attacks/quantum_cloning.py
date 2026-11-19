@@ -149,13 +149,14 @@ class QuantumCloningAttack(BaseAttack):
         Apply cloning noise to a state.
         
         For a qubit, cloning with fidelity F is equivalent to applying
-        a depolarizing channel with parameter p = 4/3 * (1 - F).
+        a depolarizing channel with parameter p = 3/2 * (1 - F).
+        This gives QBER = 1 - F, which matches the theoretical cloning bound.
         """
         if fidelity >= 1.0:
             return state.copy()
         
-        # Depolarizing parameter
-        p = 4.0/3.0 * (1.0 - fidelity)
+        # Depolarizing parameter: p = 3/2 * (1 - F) gives QBER = p * 2/3 = 1 - F
+        p = 1.5 * (1.0 - fidelity)
         p = min(p, 1.0)
         
         # Apply depolarizing noise: with prob p, apply X, Y, or Z

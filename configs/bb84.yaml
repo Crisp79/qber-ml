@@ -10,10 +10,10 @@ simulation:
 # Protocol parameters
 protocol:
   # Alice's probability of choosing Z basis (0.5 = unbiased)
-  basis_probability_z: 0.5
+  alice_p_z: 0.5
   
   # Bob's probability of choosing Z basis (0.5 = unbiased)
-  basis_probability_z: 0.5
+  bob_p_z: 0.5
   
   # Bob's photon detection efficiency [0, 1]
   detection_efficiency: 1.0

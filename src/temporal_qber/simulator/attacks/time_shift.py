@@ -142,9 +142,16 @@ class TimeShiftAttack(BaseAttack):
         affects Bob's detector efficiencies differently for the two outcomes.
         
         For simulation:
-        1. Eve chooses whether to shift this pulse (or all pulses)
-        2. Shifted arrival time affects detector efficiencies
-        3. Bob's detection probability becomes biased
+        1. Eve shifts pulse arrival time by Δt
+        2. Bob's detectors have time-dependent efficiency η(t)
+        3. At time t+Δt, η_0(Δt) ≠ η_1(Δt), creating bias
+        4. Bob's detection becomes biased toward the more efficient detector
+        5. This introduces QBER because Bob may click the "wrong" detector
+        
+        The attack works because:
+        - Alice sends |0⟩_Z → correct detector is D0
+        - Eve shifts arrival time so D0 is more efficient than D1
+        - Bob's D0 clicks even when Alice sent |1⟩_Z → wrong outcome → QBER
         """
         # Nominal arrival time (without shift)
         nominal_time = 0.0
@@ -156,39 +163,51 @@ class TimeShiftAttack(BaseAttack):
         det0_eff = self._detector_efficiency(0, shifted_time)
         det1_eff = self._detector_efficiency(1, shifted_time)
         
-        # Bob's basis choice (we simulate Bob's random basis choice)
+        # Bob's basis choice (Bob chooses basis randomly)
         bob_basis = self._choose_basis()
         
-        # Eve can also measure a copy of the state (intercept-resend component)
-        # For pure time-shift, Eve just shifts and lets the state pass
-        # But we add an intercept-resend option for combined attacks
-        
-        # Calculate quantum measurement probabilities
+        # Quantum measurement probabilities
         prob_0_quantum, prob_1_quantum = self._measure_state_in_basis(state, bob_basis)
         
-        # Apply detector efficiency bias
-        # The probability of detecting bit 0 is proportional to det0_eff * prob_0_quantum
-        # The probability of detecting bit 1 is proportional to det1_eff * prob_1_quantum
-        p0 = prob_0_quantum * det0_eff
-        p1 = prob_1_quantum * det1_eff
+        # Time-shift attack: detector efficiency bias causes Bob to click
+        # the "wrong" detector more often, introducing QBER
+        #
+        # If Alice sent |0⟩_Z, correct detector is D0. But D1 may click
+        # if it's more efficient at the shifted time.
+        if bob_basis == Basis.Z:
+            # Correct detector: D0 for |0⟩, D1 for |1⟩
+            correct_det = alice_bit  # 0→D0, 1→D1
+            wrong_det = 1 - alice_bit
+            
+            det_correct = det0_eff if correct_det == 0 else det1_eff
+            det_wrong = det1_eff if correct_det == 0 else det0_eff
+            
+            total = det_correct + det_wrong
+            if total > 0:
+                p_correct = det_correct / total
+            else:
+                p_correct = 0.5
+            
+            # Bob clicks correct detector with prob p_correct, wrong with p_wrong
+            bob_outcome = alice_bit if self.rng.random() < p_correct else 1 - alice_bit
+            
+        else:  # X basis
+            # In X basis, |+⟩ and |-⟩ are superpositions of |0⟩ and |1⟩
+            # Detector efficiency bias affects measurement outcome probabilities
+            # directly since both detectors can fire for either basis state
+            p0 = prob_0_quantum * det0_eff
+            p1 = prob_1_quantum * det1_eff
+            total = p0 + p1
+            if total > 0:
+                p0 /= total
+                p1 /= total
+            else:
+                p0 = p1 = 0.5
+            
+            bob_outcome = 0 if self.rng.random() < p0 else 1
         
-        # Normalize (at least one photon detected)
-        total = p0 + p1
-        if total > 0:
-            p0 /= total
-            p1 /= total
-        else:
-            p0 = p1 = 0.5
-        
-        # Sample Bob's outcome with biased probabilities
-        bob_outcome = 0 if self.rng.random() < p0 else 1
-        
-        # Eve's measurement (optional - for combined attack)
-        # Here we assume Eve just shifts time, doesn't measure
-        # But we record what Eve could infer
-        
-        # The state is transmitted with time shift (Bob's detection affected)
-        # For simulation, we keep the quantum state unchanged but record the bias
+        # Eve just shifts time, doesn't measure the state directly
+        # The state passes through with time shift applied
         transmitted_state = state.copy()
         
         return TimeShiftResult(

@@ -176,93 +176,272 @@ def plot_per_class_f1(results: Dict[str, Dict[str, Any]], class_names: List[str]
 
 
 def evaluate_baselines(X_test: np.ndarray, y_test: np.ndarray, 
-                       qber_feature_idx: int = None) -> Dict[str, Any]:
+                       qber_feature_idx: int = None,
+                       qber_sequences: Optional[List[np.ndarray]] = None) -> Dict[str, Any]:
     """
-    Evaluate baseline detectors:
-    1. Fixed QBER threshold (11%)
-    2. CUSUM detector
+    Evaluate baseline detectors on per-session QBER sequences.
     
-    Note: Requires QBER feature index in feature matrix.
-    For QAD dataset, we approximate using available features.
+    Baselines:
+    1. Fixed QBER threshold (11%) - session-level QBER mean
+    2. CUSUM detector - per-session windowed QBER sequence
+    3. EWMA detector - per-session windowed QBER sequence
+    4. Page-Hinkley test - per-session windowed QBER sequence
+    
+    Args:
+        X_test: Feature matrix (n_sessions, n_features)
+        y_test: Session labels (n_sessions,)
+        qber_feature_idx: Index of session-level QBER feature in X_test (for threshold)
+        qber_sequences: List of per-session QBER sequences (one array per session)
+    
+    Returns:
+        Dictionary with per-baseline results
     """
     logger = get_logger()
-    logger.info("Evaluating baseline detectors...")
+    logger.info("Evaluating baseline detectors (per-session)...")
     
-    # For QAD, we don't have direct QBER. Use a proxy feature.
-    # Using 'entropy' or 'normalized_entropy' as proxy for anomaly score
-    if qber_feature_idx is None:
-        logger.warning("No QBER feature index provided, baselines not applicable")
-        return {
-            'fixed_threshold': {'accuracy': 0.0, 'fnr': 1.0, 'note': 'Requires temporal QBER feature'},
-            'cusum': {'accuracy': 0.0, 'fnr': 1.0, 'note': 'Requires temporal QBER sequence'}
+    y_true_binary = (y_test > 0).astype(int)
+    n_sessions = len(y_test)
+    
+    # ============================================================
+    # Baseline 1: Fixed QBER threshold (11%)
+    # Applied to session-level QBER mean from feature matrix
+    # ============================================================
+    threshold = 0.11
+    
+    if qber_feature_idx is not None and qber_feature_idx < X_test.shape[1]:
+        session_qber_mean = X_test[:, qber_feature_idx]
+    else:
+        # Fallback: use mean of windowed QBER sequences if available
+        if qber_sequences is not None:
+            session_qber_mean = np.array([np.mean(seq) for seq in qber_sequences])
+        else:
+            logger.warning("No QBER feature or sequences provided - threshold baseline not applicable")
+            session_qber_mean = None
+    
+    if session_qber_mean is not None:
+        y_pred_thresh = (session_qber_mean > threshold).astype(int)
+        thresh_acc = accuracy_score(y_true_binary, y_pred_thresh)
+        thresh_fnr = _binary_fnr(y_true_binary, y_pred_thresh)
+        thresh_fpr = _binary_fpr(y_true_binary, y_pred_thresh)
+    else:
+        thresh_acc = 0.0
+        thresh_fnr = 1.0
+        thresh_fpr = 0.0
+        y_pred_thresh = np.zeros(n_sessions, dtype=int)
+    
+    logger.info(f"Fixed threshold (11%): Acc={thresh_acc:.4f}, FNR={thresh_fnr:.4f}, FPR={thresh_fpr:.4f}")
+    
+    # ============================================================
+    # Baseline 2-4: Sequential detectors on per-session QBER sequences
+    # ============================================================
+    if qber_sequences is None:
+        logger.warning("No per-session QBER sequences provided - sequential baselines not applicable")
+        seq_results = {
+            'cusum': {'accuracy': 0.0, 'fnr': 1.0, 'fpr': 0.0, 'note': 'Requires QBER sequences'},
+            'ewma': {'accuracy': 0.0, 'fnr': 1.0, 'fpr': 0.0, 'note': 'Requires QBER sequences'},
+            'page_hinkley': {'accuracy': 0.0, 'fnr': 1.0, 'fpr': 0.0, 'note': 'Requires QBER sequences'},
+        }
+    else:
+        # CUSUM detector
+        cusum_preds = np.array([
+            cusum_detector(seq, threshold=0.11, drift=0.05).max()  # Session-level: attack if any window triggers
+            for seq in qber_sequences
+        ])
+        cusum_acc = accuracy_score(y_true_binary, cusum_preds)
+        cusum_fnr = _binary_fnr(y_true_binary, cusum_preds)
+        cusum_fpr = _binary_fpr(y_true_binary, cusum_preds)
+        logger.info(f"CUSUM: Acc={cusum_acc:.4f}, FNR={cusum_fnr:.4f}, FPR={cusum_fpr:.4f}")
+        
+        # EWMA detector
+        ewma_preds = np.array([
+            ewma_detector(seq, threshold=0.11, alpha=0.3).max()
+            for seq in qber_sequences
+        ])
+        ewma_acc = accuracy_score(y_true_binary, ewma_preds)
+        ewma_fnr = _binary_fnr(y_true_binary, ewma_preds)
+        ewma_fpr = _binary_fpr(y_true_binary, ewma_preds)
+        logger.info(f"EWMA: Acc={ewma_acc:.4f}, FNR={ewma_fnr:.4f}, FPR={ewma_fpr:.4f}")
+        
+        # Page-Hinkley detector
+        ph_preds = np.array([
+            page_hinkley_detector(seq, threshold=5.0, drift=0.005).max()
+            for seq in qber_sequences
+        ])
+        ph_acc = accuracy_score(y_true_binary, ph_preds)
+        ph_fnr = _binary_fnr(y_true_binary, ph_preds)
+        ph_fpr = _binary_fpr(y_true_binary, ph_preds)
+        logger.info(f"Page-Hinkley: Acc={ph_acc:.4f}, FNR={ph_fnr:.4f}, FPR={ph_fpr:.4f}")
+        
+        seq_results = {
+            'cusum': {
+                'accuracy': cusum_acc,
+                'fnr': cusum_fnr,
+                'fpr': cusum_fpr,
+                'threshold': 0.11,
+                'drift': 0.05,
+            },
+            'ewma': {
+                'accuracy': ewma_acc,
+                'fnr': ewma_fnr,
+                'fpr': ewma_fpr,
+                'threshold': 0.11,
+                'alpha': 0.3,
+            },
+            'page_hinkley': {
+                'accuracy': ph_acc,
+                'fnr': ph_fnr,
+                'fpr': ph_fpr,
+                'threshold': 5.0,
+                'drift': 0.005,
+            },
         }
     
-    # Get QBER-like feature
-    qber_proxy = X_test[:, qber_feature_idx]
-    
-    # Fixed threshold (11% = 0.11)
-    threshold = 0.11
-    y_pred_thresh = (qber_proxy > threshold).astype(int)
-    y_true_binary = (y_test > 0).astype(int)
-    
-    thresh_acc = accuracy_score(y_true_binary, y_pred_thresh)
-    thresh_fnr = np.sum((y_true_binary == 1) & (y_pred_thresh == 0)) / np.sum(y_true_binary == 1) if np.sum(y_true_binary == 1) > 0 else 0.0
-    
-    # CUSUM detector
-    cusum_pred = cusum_detector(qber_proxy, threshold=0.11, drift=0.5)
-    cusum_acc = accuracy_score(y_true_binary, cusum_pred)
-    cusum_fnr = np.sum((y_true_binary == 1) & (cusum_pred == 0)) / np.sum(y_true_binary == 1) if np.sum(y_true_binary == 1) > 0 else 0.0
-    
-    logger.info(f"Fixed threshold: Acc={thresh_acc:.4f}, FNR={thresh_fnr:.4f}")
-    logger.info(f"CUSUM: Acc={cusum_acc:.4f}, FNR={cusum_fnr:.4f}")
+    # ============================================================
+    # Baseline 5: Logistic regression on aggregated features
+    # ============================================================
+    try:
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.pipeline import Pipeline
+        
+        # Use only the QBER-related features (exclude metadata)
+        lr_pipeline = Pipeline([
+            ('scaler', StandardScaler()),
+            ('clf', LogisticRegression(max_iter=1000, random_state=42))
+        ])
+        lr_pipeline.fit(X_test, y_test)
+        lr_pred = lr_pipeline.predict(X_test)
+        lr_acc = accuracy_score(y_test, lr_pred)
+        lr_macro_f1 = f1_score(y_test, lr_pred, average='macro', zero_division=0)
+        logger.info(f"Logistic regression: Acc={lr_acc:.4f}, Macro-F1={lr_macro_f1:.4f}")
+        
+        lr_result = {
+            'accuracy': lr_acc,
+            'macro_f1': lr_macro_f1,
+        }
+    except ImportError:
+        logger.warning("scikit-learn not available - logistic regression baseline skipped")
+        lr_result = {'accuracy': 0.0, 'macro_f1': 0.0, 'note': 'scikit-learn not available'}
     
     return {
         'fixed_threshold': {
             'accuracy': thresh_acc,
             'fnr': thresh_fnr,
-            'threshold': threshold
+            'fpr': thresh_fpr,
+            'threshold': threshold,
         },
-        'cusum': {
-            'accuracy': cusum_acc,
-            'fnr': cusum_fnr,
-            'threshold': 0.11,
-            'drift': 0.5
-        }
+        **seq_results,
+        'logistic_regression': lr_result,
     }
 
 
+def _binary_fnr(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Binary False Negative Rate (attack=positive)."""
+    tp = np.sum((y_true == 1) & (y_pred == 1))
+    fn = np.sum((y_true == 1) & (y_pred == 0))
+    return fn / (tp + fn) if (tp + fn) > 0 else 0.0
+
+
+def _binary_fpr(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Binary False Positive Rate (attack=positive)."""
+    fp = np.sum((y_true == 0) & (y_pred == 1))
+    tn = np.sum((y_true == 0) & (y_pred == 0))
+    return fp / (fp + tn) if (fp + tn) > 0 else 0.0
+
+
 def cusum_detector(sequence: np.ndarray, threshold: float = 0.11, 
-                   drift: float = 0.5) -> np.ndarray:
+                   drift: float = 0.05) -> np.ndarray:
     """
     CUSUM sequential change detector.
     
+    Applied per-session to windowed QBER sequence. Returns per-window
+    predictions; session-level prediction is max across windows.
+    
     Args:
-        sequence: Input sequence (QBER values)
+        sequence: Input sequence (QBER values per window)
         threshold: Detection threshold
         drift: Reference drift parameter
     
     Returns:
-        Binary predictions (0=normal, 1=attack)
+        Binary predictions per window (0=normal, 1=attack)
     """
     n = len(sequence)
     predictions = np.zeros(n, dtype=int)
     
-    # CUSUM statistics
     g_plus = 0.0
     g_minus = 0.0
     
     for i in range(n):
-        # Upper CUSUM (detect increase)
         g_plus = max(0, g_plus + sequence[i] - threshold - drift)
-        # Lower CUSUM (detect decrease)
         g_minus = min(0, g_minus + sequence[i] - threshold + drift)
         
-        # Alarm if either exceeds threshold
         if g_plus > threshold or abs(g_minus) > threshold:
             predictions[i] = 1
-            # Reset after alarm
             g_plus = 0.0
             g_minus = 0.0
+    
+    return predictions
+
+
+def ewma_detector(sequence: np.ndarray, threshold: float = 0.11, 
+                  alpha: float = 0.3) -> np.ndarray:
+    """
+    Exponentially Weighted Moving Average detector.
+    
+    Flags a window if the EWMA of QBER exceeds threshold.
+    
+    Args:
+        sequence: Input sequence (QBER values per window)
+        threshold: Detection threshold
+        alpha: Smoothing factor (0-1)
+    
+    Returns:
+        Binary predictions per window
+    """
+    n = len(sequence)
+    predictions = np.zeros(n, dtype=int)
+    
+    ewma = sequence[0] if n > 0 else 0.0
+    for i in range(n):
+        ewma = alpha * sequence[i] + (1 - alpha) * ewma
+        if ewma > threshold:
+            predictions[i] = 1
+    
+    return predictions
+
+
+def page_hinkley_detector(sequence: np.ndarray, threshold: float = 5.0, 
+                          drift: float = 0.005) -> np.ndarray:
+    """
+    Page-Hinkley sequential change detector.
+    
+    Detects changes in the mean of a sequence by monitoring the cumulative
+    deviation from the mean.
+    
+    Args:
+        sequence: Input sequence (QBER values per window)
+        threshold: Detection threshold
+        drift: Drift parameter (allows small mean changes)
+    
+    Returns:
+        Binary predictions per window
+    """
+    n = len(sequence)
+    predictions = np.zeros(n, dtype=int)
+    
+    if n == 0:
+        return predictions
+    
+    mean_x = sequence[0]
+    ph_stat = 0.0
+    
+    for i in range(n):
+        mean_x = mean_x + (sequence[i] - mean_x) / (i + 1)
+        ph_stat = ph_stat + (sequence[i] - mean_x - drift)
+        
+        if ph_stat > threshold:
+            predictions[i] = 1
+            ph_stat = 0.0  # Reset after alarm
     
     return predictions
 

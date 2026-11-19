@@ -129,7 +129,7 @@ def get_class_distribution(y):
 
 
 def run_pipeline(
-    data_path: str = "data/bb84_run2/bb84_temporal_dataset.csv",
+    data_path: str = "data/bb84/bb84_temporal_dataset.csv",
     n_samples: int = None,
     do_shap: bool = True,
     do_ablation: bool = True,
@@ -204,6 +204,8 @@ def run_pipeline(
             X_train, y_train, X_test, y_test,
             config, progress=progress, model_names=models
         )
+        # Persist trained models so tracker-recorded model paths exist
+        save_models(train_results, feature_names, models_dir, class_names=BB84_CLASSES)
         
         # 6. Evaluate models
         logger.info("\n[6/7] Evaluating models...")
@@ -272,25 +274,33 @@ def run_pipeline(
                     base_model, X_train, X_test,
                     feature_names=feature_names,
                     class_names=BB84_CLASSES,
+                    model_name=model_name,
+                    output_dir=results_dir,
                     max_samples=500,
                     progress=progress
                 )
                 if shap_result:
                     shap_path = f"{results_dir}/{model_name}_shap_summary.png"
-                    from temporal_qber.explain import plot_shap_summary
-                    plot_shap_summary(shap_result, feature_names, save_path=shap_path)
+                    # explain_model_shap already saves plots to output_dir
                     plots.append(shap_path)
                     
-                    save_shap_results(shap_result, feature_names, f"{results_dir}/{model_name}_shap.json")
+                    save_shap_results(shap_result, results_dir, model_name)
             
             # Feature group ablation
             ablation_result = None
             if do_ablation and model_name in ['random_forest', 'xgboost']:
                 logger.info(f"\nRunning feature group ablation for {model_name}...")
+                # Convert feature group names to indices
+                feature_name_to_idx = {name: i for i, name in enumerate(feature_names)}
+                ablation_groups = {}
+                for group_name, group_features in BB84_FEATURE_GROUPS.items():
+                    ablation_groups[group_name] = [
+                        feature_name_to_idx[f] for f in group_features if f in feature_name_to_idx
+                    ]
                 ablation_result = feature_group_ablation(
                     base_model, X_train, y_train, X_test, y_test,
-                    BB84_FEATURE_GROUPS, feature_names,
-                    BB84_CLASSES, config.cv_folds, progress=progress
+                    feature_names, ablation_groups,
+                    model_name, results_dir, progress=progress
                 )
             
             result['shap'] = shap_result
@@ -369,8 +379,9 @@ def run_pipeline(
 
 def main():
     parser = argparse.ArgumentParser(description="Run BB84 Temporal-QBER ML Pipeline")
-    parser.add_argument("--data-path", type=str, default="data/bb84_run2/bb84_temporal_dataset.csv",
-                        help="Path to BB84 dataset CSV")
+    parser.add_argument("--data-path", "--input-dir", "--in-dir", type=str, default="data/bb84/bb84_temporal_dataset.csv",
+                        dest="data_path",
+                        help="Path to BB84 dataset CSV (default: data/bb84/bb84_temporal_dataset.csv)")
     parser.add_argument("--n-samples", type=int, default=None,
                         help="Number of samples to use (stratified, default: all)")
     parser.add_argument("--no-shap", action="store_true", help="Disable SHAP explanations")
@@ -378,7 +389,9 @@ def main():
     parser.add_argument("--models", type=str, default="random_forest,xgboost,svm",
                         help="Comma-separated list of models to train")
     parser.add_argument("--models-dir", type=str, default="models/bb84", help="Models output directory")
-    parser.add_argument("--results-dir", type=str, default="results/bb84", help="Results output directory")
+    parser.add_argument("--results-dir", "--output-dir", "--out-dir", type=str, default="results/bb84",
+                        dest="results_dir",
+                        help="Results output directory (default: results/bb84)")
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level")
     parser.add_argument("--no-progress", action="store_true", help="Disable progress bars")
     parser.add_argument("--experiment-name", type=str, default="", help="Experiment name")

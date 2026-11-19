@@ -304,11 +304,18 @@ def train_all_models(
 
 
 def save_models(results: Dict[str, Dict[str, Any]], feature_names: list, 
-                output_dir: str):
+                output_dir: str, class_names: Optional[List[str]] = None):
     """Save trained models and preprocessing artifacts.
     
     Scaler is now part of each model's Pipeline, so we only save feature names.
+    
+    Args:
+        class_names: Class names to save as class_names.joblib.
+            Defaults to QAD_CLASSES; non-QAD pipelines (e.g. BB84) must pass
+            their own class list to avoid mixing tracks.
     """
+    if class_names is None:
+        class_names = QAD_CLASSES
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     for name, result in results.items():
@@ -320,7 +327,7 @@ def save_models(results: Dict[str, Dict[str, Any]], feature_names: list,
                 Path(output_dir) / "preprocessing.joblib")
     
     # Save class names
-    joblib.dump(QAD_CLASSES, Path(output_dir) / "class_names.joblib")
+    joblib.dump(class_names, Path(output_dir) / "class_names.joblib")
 
 
 def load_model(model_path: str):

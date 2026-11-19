@@ -79,7 +79,10 @@ def extract_temporal_qber_features(
     sifted_bob_rect: np.ndarray = None,
     sifted_alice_diag: np.ndarray = None,
     sifted_bob_diag: np.ndarray = None,
-    loss_seq: np.ndarray = None,
+    loss_seq: Optional[np.ndarray] = None,
+    detection_efficiency: float = 1.0,
+    dark_count_prob: float = 0.0,
+    afterpulse_prob: float = 0.0,
     window_config: Optional["WindowConfig"] = None,
     min_sifted_bits: int = 200,
 ) -> Dict[str, Any]:
@@ -210,7 +213,7 @@ def extract_temporal_qber_features(
     # G. Channel-Interaction Features (~16 features)
     # ============================================================
     if loss_seq is not None:
-        channel_features = _extract_channel_features(qber_seq, loss_seq)
+        channel_features = _extract_channel_features(qber_seq, loss_seq, detection_efficiency, dark_count_prob, afterpulse_prob)
         features.update(channel_features)
     else:
         features.update({
@@ -225,9 +228,9 @@ def extract_temporal_qber_features(
             "multi_scale_qber_16": np.nan,
             "multi_scale_qber_32": np.nan,
             "loss_burst_corr": np.nan,
-            "detector_efficiency": np.nan,
-            "dark_count_rate": np.nan,
-            "afterpulse_prob": np.nan,
+            "detector_efficiency": float(detection_efficiency),
+            "dark_count_rate": float(dark_count_prob),
+            "afterpulse_prob": float(afterpulse_prob),
             "channel_stability": np.nan,
             "qber_trend": np.nan,
         })
@@ -627,7 +630,7 @@ def _extract_basis_features(
     return features
 
 
-def _extract_channel_features(qber_seq: np.ndarray, loss_seq: np.ndarray) -> Dict[str, float]:
+def _extract_channel_features(qber_seq: np.ndarray, loss_seq: np.ndarray, detection_efficiency: float = 1.0, dark_count_prob: float = 0.0, afterpulse_prob: float = 0.0) -> Dict[str, float]:
     """Extract 16 channel-interaction features from QBER sequence and loss sequence."""
     features = {}
     
@@ -642,12 +645,11 @@ def _extract_channel_features(qber_seq: np.ndarray, loss_seq: np.ndarray) -> Dic
             "multi_scale_qber_4": 0.0,
             "multi_scale_qber_8": 0.0,
             "multi_scale_qber_16": 0.0,
-            "multi_scale_qber_16": 0.0,  # duplicate in original, fixing
             "multi_scale_qber_32": 0.0,
             "loss_burst_corr": 0.0,
-            "detector_efficiency": 0.0,
-            "dark_count_rate": 0.0,
-            "afterpulse_prob": 0.0,
+            "detector_efficiency": float(detection_efficiency),
+            "dark_count_rate": float(dark_count_prob),
+            "afterpulse_prob": float(afterpulse_prob),
             "channel_stability": 0.0,
             "qber_trend": 0.0,
         }
@@ -660,7 +662,7 @@ def _extract_channel_features(qber_seq: np.ndarray, loss_seq: np.ndarray) -> Dic
     # 1. Key generation rate: sifted key rate * (1 - h(QBER) - f * h(QBER))
     # Simplified: transmission efficiency * (1 - H2(QBER))
     mean_qber = np.mean(qber_seq)
-    if mean_qber > 0 and mean_qber < 0.5:
+    if 0 <= mean_qber < 0.5:
         h_qber = -mean_qber * np.log2(mean_qber) - (1 - mean_qber) * np.log2(1 - mean_qber)
         key_gen_rate = max(0.0, 1 - 2 * h_qber)  # Simplified key rate
     else:
@@ -712,11 +714,10 @@ def _extract_channel_features(qber_seq: np.ndarray, loss_seq: np.ndarray) -> Dic
         "qber_loss_corr": float(qber_loss_corr),
         "qber_loss_interaction": float(qber_loss_interaction),
         "loss_burst_corr": float(loss_burst_corr),
-        "detector_efficiency": 1.0,  # Placeholder - would need actual detector params
-        "dark_count_rate": 0.0,  # Placeholder
-        "afterpulse_prob": 0.0,  # Placeholder
+        "detector_efficiency": float(detection_efficiency),
+        "dark_count_rate": float(dark_count_prob),
+        "afterpulse_prob": float(afterpulse_prob),
         "channel_stability": 1.0 - float(np.std(qber_seq)) if len(qber_seq) > 1 else 1.0,
-        "qber_trend": 0.0,  # Will be set by trend features
     })
     
     return features

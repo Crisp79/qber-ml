@@ -84,7 +84,7 @@ class LiveStatusDisplay:
         bar = "#" * filled + "-" * (bar_width - filled)
         
         status_line = (
-            #f"\r{'='*78}\n"
+            f"\r{'='*78}\n"
             f"BB84 DATASET GENERATION  |  {self.completed:>5}/{self.total:<5}  ({pct:5.1f}%)  "
             f"[{bar}]  OK:{self.completed-self.failed}  ERR:{self.failed}  "
             f"Avg: {avg_time:.1f}s  ETA: {self._fmt_time(eta)}  Elapsed: {self._fmt_time(elapsed)}\n"
@@ -203,6 +203,201 @@ ATTACK_CONFIGS = {
     },
 }
 
+# ============================================================
+# Parameter ranges for per-session randomization
+# ============================================================
+# Prevents shortcut learning: models can't memorize fixed parameter signatures.
+# Each session gets randomized attack + channel parameters within these ranges.
+# Hold-out ranges can be used for testing (train on [0.1,0.3], test on [0.4,0.6]).
+
+# Base channel noise ranges applied to ALL classes (including normal)
+BASE_CHANNEL_PARAMS = {
+    "channel_types": ["ideal", "depolarizing", "phase_flip", "bit_flip"],
+    "channel_type_probs": [0.5, 0.2, 0.2, 0.1],  # Mostly ideal, some noise
+    "loss_prob_range": (0.0, 0.15),      # Photon loss 0-15%
+    "depolarizing_prob_range": (0.0, 0.08),  # Depolarizing noise 0-8%
+    "phase_flip_prob_range": (0.0, 0.08),   # Phase flip 0-8%
+    "bit_flip_prob_range": (0.0, 0.08),     # Bit flip 0-8%
+}
+
+# Detection efficiency range (Bob's detector efficiency 80-100%)
+DETECTION_EFFICIENCY_RANGE = (0.80, 1.00)
+
+# Dark count probability range (0-5%)
+DARK_COUNT_PROB_RANGE = (0.0, 0.05)
+
+# Per-attack parameter ranges (sampled per session)
+ATTACK_PARAM_RANGES = {
+    "normal": {
+        # Normal: no attack, only channel noise
+        "attack_type": "none",
+    },
+    "intercept_resend": {
+        "attack_types": ["intercept_resend", "partial_intercept_resend"],
+        "attack_type_probs": [0.7, 0.3],
+        "interception_prob_range": (0.3, 1.0),  # for partial IR
+        "p_z_range": (0.4, 0.6),  # Eve's Z basis bias (0.5 = unbiased)
+    },
+    "photon_number_splitting": {
+        "mu_range": (0.1, 0.4),  # Mean photon number for WCP
+        "strategies": ["pass", "intercept_resend"],
+        "strategy_probs": [0.8, 0.2],
+    },
+    "beam_splitting": {
+        "reflection_coeff_range": (0.05, 0.3),  # Eve's tap fraction
+        "mu_range": (0.1, 0.4),
+    },
+    "time_shift": {
+        "time_shift_range": (0.3, 0.8),  # ns shift
+        "det_width_range": (0.5, 1.5),   # detector width
+        "intercept_prob_range": (0.5, 1.0),  # for combined time_shift+IR
+    },
+    "trojan_horse": {
+        "probe_photons_range": (500, 5000),
+        "back_reflection_coeff_range": (1e-6, 1e-3),
+        "basis_inference_prob_range": (0.7, 0.95),
+        "detector_saturation_prob_range": (0.0, 0.1),
+    },
+    "quantum_cloning": {
+        "attack_type": "quantum_cloning",
+        "cloning_types": ["universal", "phase_covariant", "state_dependent", "asymmetric"],
+        "cloning_type_probs": [0.4, 0.3, 0.2, 0.1],
+    },
+    "fake_state": {
+        "subtypes": ["phase_remapped", "detector_mismatch", "wavelength", "intensity", "combined", "time_bin"],
+        "subtype_probs": [0.2, 0.3, 0.1, 0.1, 0.1, 0.2],
+        "phase_shift_range": (0.0, np.pi),
+        "det0_efficiency_range": (0.7, 1.0),
+        "det1_efficiency_range": (0.7, 1.0),
+        "multi_photon_prob_range": (0.0, 0.3),
+        "wavelength_shift_range": (0.0, 10.0),
+    },
+}
+
+
+def randomize_attack_params(class_name: str, rng: np.random.Generator) -> Dict[str, Any]:
+    """
+    Randomize attack and channel parameters for a single session.
+    
+    Prevents shortcut learning by ensuring each session has unique
+    parameter values within defined ranges.
+    
+    Args:
+        class_name: The attack class name
+        rng: Random number generator for reproducibility
+        
+    Returns:
+        Dict with 'attack_type', 'attack_params', 'channel_type',
+        'channel_params', 'detection_efficiency', 'dark_count_prob'
+    """
+    ranges = ATTACK_PARAM_RANGES.get(class_name, {})
+    
+    # --- Attack type selection ---
+    attack_type = ranges.get("attack_type", "none")
+    
+    if class_name == "intercept_resend":
+        attack_type = rng.choice(
+            ranges["attack_types"], p=ranges["attack_type_probs"]
+        )
+        attack_params = {}
+        if attack_type == "partial_intercept_resend":
+            attack_params["interception_prob"] = float(
+                rng.uniform(*ranges["interception_prob_range"])
+            )
+        attack_params["p_z"] = float(rng.uniform(*ranges["p_z_range"]))
+    
+    elif class_name == "photon_number_splitting":
+        attack_params = {
+            "mean_photon_number": float(rng.uniform(*ranges["mu_range"])),
+            "single_photon_strategy": rng.choice(
+                ranges["strategies"], p=ranges["strategy_probs"]
+            ),
+        }
+    
+    elif class_name == "beam_splitting":
+        attack_params = {
+            "reflection_coeff": float(rng.uniform(*ranges["reflection_coeff_range"])),
+            "mean_photon_number": float(rng.uniform(*ranges["mu_range"])),
+        }
+    
+    elif class_name == "time_shift":
+        attack_params = {
+            "time_shift": float(rng.uniform(*ranges["time_shift_range"])),
+            "det_width": float(rng.uniform(*ranges["det_width_range"])),
+            "intercept_prob": float(rng.uniform(*ranges["intercept_prob_range"])),
+        }
+    
+    elif class_name == "trojan_horse":
+        attack_params = {
+            "probe_photons": int(rng.integers(*ranges["probe_photons_range"])),
+            "back_reflection_coeff": float(
+                rng.uniform(*ranges["back_reflection_coeff_range"])
+            ),
+            "basis_inference_prob": float(
+                rng.uniform(*ranges["basis_inference_prob_range"])
+            ),
+            "detector_saturation_prob": float(
+                rng.uniform(*ranges["detector_saturation_prob_range"])
+            ),
+        }
+    
+    elif class_name == "quantum_cloning":
+        cloning_type = rng.choice(
+            ranges["cloning_types"], p=ranges["cloning_type_probs"]
+        )
+        attack_params = {"cloning_type": cloning_type}
+    
+    elif class_name == "fake_state":
+        subtype = rng.choice(ranges["subtypes"], p=ranges["subtype_probs"])
+        attack_params = {
+            "attack_subtype": subtype,
+            "phase_shift": float(rng.uniform(*ranges["phase_shift_range"])),
+            "det0_efficiency": float(rng.uniform(*ranges["det0_efficiency_range"])),
+            "det1_efficiency": float(rng.uniform(*ranges["det1_efficiency_range"])),
+            "multi_photon_prob": float(rng.uniform(*ranges["multi_photon_prob_range"])),
+            "wavelength_shift": float(rng.uniform(*ranges["wavelength_shift_range"])),
+        }
+    
+    else:
+        # normal: no attack
+        attack_params = {}
+    
+    # --- Channel noise (applied to ALL classes including normal) ---
+    channel_type = rng.choice(
+        BASE_CHANNEL_PARAMS["channel_types"],
+        p=BASE_CHANNEL_PARAMS["channel_type_probs"],
+    )
+    
+    channel_params = {}
+    if channel_type == "depolarizing":
+        channel_params["depolarizing_prob"] = float(
+            rng.uniform(*BASE_CHANNEL_PARAMS["depolarizing_prob_range"])
+        )
+    elif channel_type == "phase_flip":
+        channel_params["phase_flip_prob"] = float(
+            rng.uniform(*BASE_CHANNEL_PARAMS["phase_flip_prob_range"])
+        )
+    elif channel_type == "bit_flip":
+        channel_params["bit_flip_prob"] = float(
+            rng.uniform(*BASE_CHANNEL_PARAMS["bit_flip_prob_range"])
+        )
+    channel_params["loss_probability"] = float(
+        rng.uniform(*BASE_CHANNEL_PARAMS["loss_prob_range"])
+    )
+    
+    # --- Detector parameters ---
+    detection_efficiency = float(rng.uniform(*DETECTION_EFFICIENCY_RANGE))
+    dark_count_prob = float(rng.uniform(*DARK_COUNT_PROB_RANGE))
+    
+    return {
+        "attack_type": attack_type,
+        "attack_params": attack_params,
+        "channel_type": channel_type,
+        "channel_params": channel_params,
+        "detection_efficiency": detection_efficiency,
+        "dark_count_prob": dark_count_prob,
+    }
+
 
 def load_checkpoint(output_path: Path) -> Dict[str, Any]:
     """Load checkpoint data if exists."""
@@ -238,6 +433,7 @@ def generate_session_task(args: Tuple) -> Tuple[str, Dict[str, Any], Optional[st
     Args:
         args: Tuple of (class_idx, class_name, session_idx, n_transmissions, 
                       window_size, stride, min_sifted_bits, seed, attack_config)
+        attack_config can be a dict (fixed config) or None (use randomization)
     
     Returns:
         Tuple of (session_key, features_dict, error_message)
@@ -251,6 +447,21 @@ def generate_session_task(args: Tuple) -> Tuple[str, Dict[str, Any], Optional[st
         from temporal_qber.temporal import extract_temporal_qber_features, WindowConfig
         from temporal_qber.simulator.session import SessionConfig as TemporalSessionConfig
         
+        # Create per-session RNG for parameter randomization
+        # Derive a unique sub-seed from the session seed
+        session_rng = np.random.default_rng(seed * 1000003 + class_idx * 97 + session_idx)
+        
+        # Randomize parameters per session (overrides fixed config)
+        randomized = randomize_attack_params(class_name, session_rng)
+        
+        # Use randomized params, falling back to fixed config if provided
+        attack_type = attack_config.get('attack_type', randomized['attack_type']) if attack_config else randomized['attack_type']
+        attack_params = attack_config.get('attack_params', randomized['attack_params']) if attack_config else randomized['attack_params']
+        channel_type = attack_config.get('channel_type', randomized['channel_type']) if attack_config else randomized['channel_type']
+        channel_params = attack_config.get('channel_params', randomized['channel_params']) if attack_config else randomized['channel_params']
+        detection_efficiency = attack_config.get('detection_efficiency', randomized['detection_efficiency']) if attack_config else randomized['detection_efficiency']
+        dark_count_prob = attack_config.get('dark_count_prob', randomized['dark_count_prob']) if attack_config else randomized['dark_count_prob']
+        
         # Create session config
         session_config = TemporalSessionConfig(
             n_transmissions=n_transmissions,
@@ -260,9 +471,9 @@ def generate_session_task(args: Tuple) -> Tuple[str, Dict[str, Any], Optional[st
             seed=seed,
             alice_p_z=0.5,
             bob_p_z=0.5,
-            detection_efficiency=1.0,
-            channel_type=attack_config.get('channel_type', 'ideal'),
-            channel_params=attack_config.get('channel_params', {}),
+            detection_efficiency=detection_efficiency,
+            channel_type=channel_type,
+            channel_params=channel_params,
         )
         
         # Run BB84 simulation
@@ -271,12 +482,12 @@ def generate_session_task(args: Tuple) -> Tuple[str, Dict[str, Any], Optional[st
             'seed': seed,
             'alice_p_z': 0.5,
             'bob_p_z': 0.5,
-            'detection_efficiency': 1.0,
-            'dark_count_prob': 0.0,
-            'channel_type': attack_config.get('channel_type', 'ideal'),
-            'channel_params': attack_config.get('channel_params', {}),
-            'attack_type': attack_config.get('attack_type', 'none'),
-            'attack_params': attack_config.get('attack_params', {}),
+            'detection_efficiency': detection_efficiency,
+            'dark_count_prob': dark_count_prob,
+            'channel_type': channel_type,
+            'channel_params': channel_params,
+            'attack_type': attack_type,
+            'attack_params': attack_params,
         }
         
         result = run_bb84_simulation(**bb84_config)
@@ -311,12 +522,15 @@ def generate_session_task(args: Tuple) -> Tuple[str, Dict[str, Any], Optional[st
                 min_sifted_bits=min_sifted_bits,
             ),
             min_sifted_bits=min_sifted_bits,
+            detection_efficiency=detection_efficiency,
+            dark_count_prob=dark_count_prob,
+            afterpulse_prob=0.0,
         )
         
-        # Add metadata
+        # Add metadata (class_name/class_idx from function args)
         features.update({
-            'class_label': attack_config.get('class_label', 'unknown'),
-            'class_index': attack_config.get('class_index', -1),
+            'class_label': class_name,
+            'class_index': class_idx,
             'n_transmissions': result.n_transmissions,
             'seed': result.seed,
             'channel_type': result.channel_config.get('channel_type', 'unknown'),
@@ -378,10 +592,22 @@ def create_session_config(
 
 def run_bb84_session_with_features(
     config: TemporalSessionConfig,
-    attack_config: Dict[str, Any],
-    logger
+    class_name: str,
+    class_idx: int,
+    logger,
+    session_rng: Optional[np.random.Generator] = None,
 ) -> Dict[str, Any]:
-    """Run a BB84 session with attack and extract temporal features."""
+    """Run a BB84 session with attack and extract temporal features.
+    
+    Uses per-session parameter randomization to prevent shortcut learning.
+    """
+    
+    # Create per-session RNG if not provided
+    if session_rng is None:
+        session_rng = np.random.default_rng(config.seed * 1000003 + class_idx * 97)
+    
+    # Randomize parameters per session
+    randomized = randomize_attack_params(class_name, session_rng)
     
     # Run BB84 simulation
     bb84_config = {
@@ -389,12 +615,12 @@ def run_bb84_session_with_features(
         'seed': config.seed,
         'alice_p_z': config.alice_p_z,
         'bob_p_z': config.bob_p_z,
-        'detection_efficiency': config.detection_efficiency,
-        'dark_count_prob': 0.0,  # Default value since not in SessionConfig
-        'channel_type': attack_config.get('channel_type', 'ideal'),
-        'channel_params': attack_config.get('channel_params', {}),
-        'attack_type': attack_config.get('attack_type', 'none'),
-        'attack_params': attack_config.get('attack_params', {}),
+        'detection_efficiency': randomized['detection_efficiency'],
+        'dark_count_prob': randomized['dark_count_prob'],
+        'channel_type': randomized['channel_type'],
+        'channel_params': randomized['channel_params'],
+        'attack_type': randomized['attack_type'],
+        'attack_params': randomized['attack_params'],
     }
     
     result = run_bb84_simulation(**bb84_config)
@@ -417,12 +643,15 @@ def run_bb84_session_with_features(
         bob_detected=bob_detected_filtered,
         window_config=window_config,
         min_sifted_bits=config.min_sifted_bits,
+        detection_efficiency=randomized['detection_efficiency'],
+        dark_count_prob=randomized['dark_count_prob'],
+        afterpulse_prob=0.0,
     )
     
     # Add metadata
     features.update({
-        'class_label': attack_config.get('class_label', 'unknown'),
-        'class_index': attack_config.get('class_index', -1),
+        'class_label': class_name,
+        'class_index': class_idx,
         'n_transmissions': result.n_transmissions,
         'seed': result.seed,
         'channel_type': result.channel_config.get('channel_type', 'unknown'),
@@ -444,11 +673,15 @@ def generate_dataset(
     stride: int = 50,
     min_sifted_bits: int = 30,
     output_dir: str = "data/bb84",
+    input_dir: str = None,
     log_level: str = "INFO",
     disable_progress: bool = False,
     workers: int = 1,
 ) -> str:
     """Generate the full BB84 dataset with multiprocessing support."""
+    
+    if input_dir is None:
+        input_dir = output_dir
     
     # Setup logging
     logger = setup_logging(
@@ -463,8 +696,14 @@ def generate_dataset(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # Load checkpoint if exists
-    checkpoint = load_checkpoint(output_path)
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    
+    # Load checkpoint if exists (only resume if input_dir == output_dir, i.e., continuing same generation)
+    checkpoint = load_checkpoint(output_path) if input_dir == output_dir else load_checkpoint(input_path)
+    # Only use checkpoint if we're continuing the same generation
+    if input_dir != output_dir:
+        checkpoint = {"completed_sessions": [], "session_results": {}, "next_session_id": 0}
     completed_keys = set(checkpoint.get("completed_sessions", []))
     session_results = checkpoint.get("session_results", {})
     session_id = checkpoint.get("next_session_id", 0)
@@ -483,12 +722,11 @@ def generate_dataset(
         logger.info(f"Resuming from checkpoint: {len(completed_keys)} sessions already completed")
     
     # Prepare all session tasks
+    # Attack config is passed as None to trigger per-session parameter randomization
+    # in generate_session_task. This prevents shortcut learning by ensuring each
+    # session has unique parameter values.
     all_tasks = []
     for class_idx, class_name in enumerate(BB84_CLASSES):
-        attack_config = ATTACK_CONFIGS[class_name].copy()
-        attack_config['class_label'] = class_name
-        attack_config['class_index'] = class_idx
-        
         for i in range(n_sessions_per_class):
             session_key_str = session_key(class_idx, i, n_sessions_per_class)
             if session_key_str in completed_keys:
@@ -497,7 +735,7 @@ def generate_dataset(
             seed = (class_idx * n_sessions_per_class + i) * 1000 + 42
             task_args = (
                 class_idx, class_name, i, n_transmissions, window_size, stride,
-                min_sifted_bits, seed, attack_config
+                min_sifted_bits, seed, None,  # None triggers parameter randomization
             )
             all_tasks.append((session_key_str, task_args))
     
@@ -676,8 +914,12 @@ def main():
                         help='Window stride in sifted bits (default: 50)')
     parser.add_argument('--min-sifted-bits', type=int, default=30,
                         help='Minimum sifted bits per window for valid QBER (default: 30)')
-    parser.add_argument('--output-dir', type=str, default='data/bb84',
+    parser.add_argument('--output-dir', '--out-dir', type=str, default='data/bb84',
+                        dest='output_dir',
                         help='Output directory (default: data/bb84)')
+    parser.add_argument('--input-dir', '--in-dir', type=str, default=None,
+                        dest='input_dir',
+                        help='Input directory for checkpoint resume (default: same as output-dir)')
     parser.add_argument('--log-level', type=str, default='INFO',
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                         help='Logging level')
@@ -688,6 +930,8 @@ def main():
     
     args = parser.parse_args()
     
+    input_dir = args.input_dir or args.output_dir
+    
     generate_dataset(
         n_sessions_per_class=args.n_sessions_per_class,
         n_transmissions=args.n_transmissions,
@@ -695,6 +939,7 @@ def main():
         stride=args.stride,
         min_sifted_bits=args.min_sifted_bits,
         output_dir=args.output_dir,
+        input_dir=input_dir,
         log_level=args.log_level,
         disable_progress=args.disable_progress,
         workers=args.workers,
