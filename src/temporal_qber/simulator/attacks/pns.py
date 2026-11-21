@@ -25,7 +25,7 @@ import math
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
-from .base import BaseAttack, AttackResult
+from .base import BaseAttack, AttackResult, sample_nonempty_photon_number
 from ..alice import Basis, Bit, BB84_STATES, measure_state_in_basis, sample_measurement
 
 
@@ -49,27 +49,36 @@ class PNSAttack(BaseAttack):
     def __init__(
         self, 
         mean_photon_number: float = 0.1,  # mu parameter of WCP
-        single_photon_strategy: str = "pass",  # "pass" or "intercept_resend"
-        seed: Optional[int] = None
+        single_photon_strategy: str = "pass",  # "pass", "intercept_resend" or "block"
+        seed: Optional[int] = None,
+        single_photon_block_prob: float = 1.0,  # used by "block"
     ):
         """
         Initialize PNS attack.
-        
+
         Args:
             mean_photon_number: Mean photon number (mu) of weak coherent pulses
             single_photon_strategy: What to do with single-photon pulses:
-                - "pass": Let single-photon pulses pass unchanged (Eve gets no info)
+                - "pass": Let single-photon pulses pass unchanged (Eve gets no info;
+                  the attack then has no observable effect at Bob)
                 - "intercept_resend": Perform intercept-resend on single-photon pulses
+                - "block": Block them with probability single_photon_block_prob - the
+                  standard PNS attack (Brassard, Lutkenhaus, Mor & Sanders, PRL 85, 1330,
+                  2000). Visible at Bob only as extra loss, never as errors.
             seed: Random seed for reproducibility
+            single_photon_block_prob: Fraction of single-photon pulses Eve blocks ("block")
         """
         super().__init__(seed)
         if mean_photon_number <= 0:
             raise ValueError(f"mean_photon_number must be > 0, got {mean_photon_number}")
-        if single_photon_strategy not in ("pass", "intercept_resend"):
-            raise ValueError(f"single_photon_strategy must be 'pass' or 'intercept_resend', got {single_photon_strategy}")
-        
+        if single_photon_strategy not in ("pass", "intercept_resend", "block"):
+            raise ValueError(f"single_photon_strategy must be 'pass', 'intercept_resend' or 'block', got {single_photon_strategy}")
+        if not 0 <= single_photon_block_prob <= 1:
+            raise ValueError(f"single_photon_block_prob must be in [0, 1], got {single_photon_block_prob}")
+
         self.mu = mean_photon_number
         self.single_photon_strategy = single_photon_strategy
+        self.block_prob = single_photon_block_prob
         
         # Pre-compute photon number probabilities (Poisson distribution)
         # P(n) = e^(-mu) * mu^n / n!
@@ -86,9 +95,8 @@ class PNSAttack(BaseAttack):
         self.p_z = 0.5
     
     def _sample_photon_number(self) -> int:
-        """Sample photon number from Poisson distribution."""
-        # Use numpy's poisson for sampling
-        return self.rng.poisson(self.mu)
+        """Sample the photon number of a non-empty pulse (see sample_nonempty_photon_number)."""
+        return sample_nonempty_photon_number(self.rng, self.mu)
     
     def _choose_basis(self) -> int:
         """Eve randomly chooses a measurement basis."""
@@ -109,7 +117,23 @@ class PNSAttack(BaseAttack):
     def _prepare_state(self, basis: int, bit: int) -> np.ndarray:
         """Prepare a new quantum state based on Eve's measurement."""
         return BB84_STATES[(basis, bit)].copy()
-    
+
+    def _block_or_pass_single(self, state: np.ndarray) -> "PNSResult":
+        """"block" strategy: Eve cannot split a single photon, so she blocks it with
+        probability block_prob (raising her information share of Bob's key) and lets the
+        rest through. A blocked pulse reaches Bob as vacuum: loss, no error."""
+        blocked = self.rng.random() < self.block_prob
+        return PNSResult(
+            photon_number=1,
+            original_state=state.copy(),
+            transmitted_state=np.zeros_like(state) if blocked else state.copy(),
+            intercepted=blocked,
+            eve_basis=None,
+            eve_outcome=None,
+            eve_info={"photon_number": 1,
+                      "attack_type": "pns_single_blocked" if blocked else "pns_single_pass"},
+        )
+
     def attack(self, state: np.ndarray, alice_basis: int, alice_bit: int) -> AttackResult:
         """
         Perform PNS attack on a single transmission.
@@ -155,6 +179,8 @@ class PNSAttack(BaseAttack):
         
         elif n_photons == 1:
             # Single-photon pulse
+            if self.single_photon_strategy == "block":
+                return self._block_or_pass_single(state)
             if self.single_photon_strategy == "pass":
                 # Eve cannot attack without introducing errors
                 return PNSResult(
@@ -224,9 +250,11 @@ class PNSAttackWithStorage(PNSAttack):
         self, 
         mean_photon_number: float = 0.1,
         single_photon_strategy: str = "pass",
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        single_photon_block_prob: float = 1.0,
     ):
-        super().__init__(mean_photon_number, single_photon_strategy, seed)
+        super().__init__(mean_photon_number, single_photon_strategy, seed,
+                         single_photon_block_prob=single_photon_block_prob)
     
     def attack(self, state: np.ndarray, alice_basis: int, alice_bit: int) -> AttackResult:
         """
@@ -264,6 +292,8 @@ class PNSAttackWithStorage(PNSAttack):
             )
         
         elif n_photons == 1:
+            if self.single_photon_strategy == "block":
+                return self._block_or_pass_single(state)
             if self.single_photon_strategy == "pass":
                 return PNSResult(
                     photon_number=1,

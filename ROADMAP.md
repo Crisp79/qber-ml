@@ -103,8 +103,10 @@ The current `data/bb84_run2/` dataset was generated with fixed parameters on an 
   - [ ] Give time_shift a timing observable or merge with intercept_resend
   - [x] **DONE**: Review fake_state: QBER exactly 50% is wrong for detector-mismatch
   - [x] **DONE**: Review quantum_cloning: QBER 14.8% vs expected 16.7% (1/6)
+  - [x] **DONE (2026-11-21)**: Fix 5 attack classes silently simulated with `attack_type="none"` (missing key in `ATTACK_PARAM_RANGES`); regression tests added; earlier pilot results invalid
   - [ ] Fix broken features: `key_gen_rate` is 0 for normal; `permutation_entropy` and `qber_trend` are constant
-  - [ ] Fix package issues: missing `.datasets` import, `tqdm` not in `pyproject.toml`
+  - [x] **DONE**: Remove dead `.datasets` import (never committed; `.gitignore` rule anchored to `/datasets/`)
+  - [ ] Declare `tqdm` in `pyproject.toml` (currently transitive via `shap`/`kaggle`)
 
 - [ ] **PLANNED: Phase 2 — Pilot and leakage checks**
   - [ ] Generate pilot of ~200 sessions per class
@@ -124,7 +126,7 @@ The current `data/bb84_run2/` dataset was generated with fixed parameters on an 
   - [ ] Validate fast path reproduces reference results (normal ~0% QBER, intercept_resend ~25% QBER)
 
 - [ ] **PLANNED: Phase 4 — Full run (24k sessions)**
-  - [ ] Generate full 24k-session dataset with speedups
+  - [x] **DONE (2026-11-21)**: Generate full 24k-session dataset (without Phase 3 speedups — 45 min on 16 cores) → `data/bb84/`; 14/15 leakage tests pass (`key_gen_rate` constant within `time_shift`)
   - [ ] Fix baselines: fixed QBER threshold and CUSUM on per-session windowed QBER sequences (not across sessions)
   - [ ] Add EWMA, Page-Hinkley, logistic regression baselines
   - [ ] Rerun training with multiple seeds and confidence intervals
@@ -147,6 +149,6 @@ The current `data/bb84_run2/` dataset was generated with fixed parameters on an 
 7. **BB84 leakage tests** ✅ DONE — `tests/test_bb84_leakage.py` with 8 tests (7 pass, 4 dataset tests fail until regenerated dataset verified)
 8. **BB84 real baselines** ✅ DONE — Fixed threshold, CUSUM, EWMA, Page-Hinkley, logistic regression in `evaluate.py`
 9. **Fix BB84 simulator bugs** ✅ DONE — Bob zero-norm state detection, fake_state QBER, quantum_cloning QBER fixed
-10. **Regenerate full 24,000-session BB84 dataset** — With randomized parameters; verify no leakage
+10. **Regenerate full 24,000-session BB84 dataset** ✅ DONE (2026-11-21) — `data/bb84/`, after fixing 5 classes that ran `attack_type="none"`
 11. **Rerun BB84 pipeline** — Multiple seeds, unseen-parameter splits, feature-group ablation
 12. **Build report PDF** — verify MiKTeX path and bibliography

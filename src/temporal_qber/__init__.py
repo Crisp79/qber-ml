@@ -110,14 +110,6 @@ from .temporal import (
     TEMPORAL_QBER_FEATURE_GROUPS,
 )
 
-# Dataset modules
-from .datasets import (
-    generate_bb84_dataset,
-    load_bb84_dataset,
-    dataset_to_features_labels,
-    create_bb84_datasets,
-)
-
 __all__ = [
     # Config
     "QAD_CLASSES",
@@ -206,9 +198,4 @@ __all__ = [
     "extract_temporal_qber_features",
     "TEMPORAL_QBER_FEATURES",
     "TEMPORAL_QBER_FEATURE_GROUPS",
-    # Datasets
-    "generate_bb84_dataset",
-    "load_bb84_dataset",
-    "dataset_to_features_labels",
-    "create_bb84_datasets",
 ]

@@ -4,6 +4,27 @@
 **Branch**: feature/bb84-attacks  
 **Commit**: e566b521  
 
+> **Correction (2026-11-21): the BB84 results below are invalid for 5 of 8 classes.**
+> `ATTACK_PARAM_RANGES` in `scripts/generate_bb84_dataset.py` had no `"attack_type"` for
+> `photon_number_splitting`, `beam_splitting`, `time_shift`, `trojan_horse` and `fake_state`, so
+> `randomize_attack_params()` fell back to `"none"`: those sessions were unattacked normal sessions
+> under an attack label (the `attack_type` column of every affected dataset reads `none`). This is the
+> same bug fixed for `quantum_cloning` in change 5 below, which was only fixed for that one class.
+> The "6/8 attacks indistinguishable" result and the root-cause analysis are therefore artefacts of
+> the bug, not evidence about passive attacks. After the fix, a 25-sessions-per-class sample gives mean
+> QBER: normal 0.051, PNS 0.043, beam_splitting 0.055, trojan_horse 0.075, fake_state 0.075,
+> time_shift 0.216, quantum_cloning 0.201, intercept_resend 0.243. Results must be re-derived from the
+> regenerated `data/bb84/`. Regression tests: `test_every_attack_class_runs_a_real_attack`,
+> `test_attack_classes_were_actually_attacked` in `tests/test_bb84_leakage.py`.
+>
+> **Second correction (2026-11-22):** three further simulator bugs also shaped every result below:
+> `Bob.measure_batch()` counted lost photons as bit-0 clicks (so no attack or channel ever caused
+> loss), `loss_probability` was ignored on ideal channels, and beam splitting / PNS skipped 67–90%
+> of pulses. Several attack models also had no observable effect (PNS `pass`, 70% of fake-state
+> sessions) or duplicated intercept-resend (time shift). After the fixes and the attack redesign
+> (see `NEWCHANGES.md`, entries 8–20) a 400-sessions/class pilot reaches 79.1% accuracy / macro-F1
+> 0.79 with XGBoost on the same 63 features, with every class at F1 ≥ 0.67.
+
 ---
 
 ## System Details

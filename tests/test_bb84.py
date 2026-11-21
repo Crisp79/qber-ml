@@ -603,5 +603,110 @@ class TestAttacks:
         assert 0.04 < result.qber < 0.08
 
 
+class TestPhotonLoss:
+    """Regression tests: lost photons must be non-detections, not bit-0 clicks."""
+
+    def test_measure_batch_vacuum_is_not_detected(self):
+        bob = Bob(seed=1, detection_efficiency=1.0, dark_count_prob=0.0)
+        states = np.zeros((1000, 2), dtype=np.complex128)
+        measurements = bob.measure_batch(states)
+        assert not any(m.detected for m in measurements)
+
+    def test_measure_batch_vacuum_only_clicks_on_dark_counts(self):
+        bob = Bob(seed=1, detection_efficiency=1.0, dark_count_prob=0.1)
+        measurements = bob.measure_batch(np.zeros((20000, 2), dtype=np.complex128))
+        assert all(m.is_dark_count for m in measurements if m.detected)
+        assert 0.08 < np.mean([m.detected for m in measurements]) < 0.12
+
+    @pytest.mark.parametrize("channel_type", ["ideal", "depolarizing"])
+    def test_channel_loss_reduces_detection_rate(self, channel_type):
+        result = run_bb84_simulation(n_transmissions=20000, seed=3, channel_type=channel_type,
+                                     channel_params={"loss_probability": 0.3})
+        assert 0.67 < result.bob_detected.mean() < 0.73
+        assert result.qber < 0.01  # lost photons must not become bit-0 errors
+
+    def test_beam_splitting_loss_matches_tap_fraction(self):
+        # Every transmission is a non-empty pulse, so for small mu Bob loses ~R of them.
+        result = run_bb84_simulation(n_transmissions=20000, seed=4, attack_type="beam_splitting",
+                                     attack_params={"reflection_coeff": 0.3, "mean_photon_number": 0.1})
+        assert 0.25 < 1 - result.bob_detected.mean() < 0.33
+        assert result.qber < 0.01
+
+
+class TestDetectorSideChannels:
+    """Bob-side detector hook and the attack models that use it (clean channel)."""
+
+    @staticmethod
+    def _sim(attack_type, n=20000, seed=5, **params):
+        return run_bb84_simulation(n_transmissions=n, seed=seed, detection_efficiency=1.0,
+                                   dark_count_prob=0.0, attack_type=attack_type, attack_params=params)
+
+    def test_eff_scale_suppresses_one_detector(self):
+        bob = Bob(seed=1, detection_efficiency=1.0, dark_count_prob=0.0)
+        n = 2000
+        z0 = np.tile(BB84_STATES[(Basis.Z, Bit.ZERO)], (n, 1))
+        z1 = np.tile(BB84_STATES[(Basis.Z, Bit.ONE)], (n, 1))
+        bases = np.zeros(n, dtype=np.int8)
+        scale = np.tile([1.0, 0.0], (n, 1))  # bit-1 detector blind
+        assert all(m.detected for m in bob.measure_batch(z0, bases=bases, eff_scale=scale))
+        assert not any(m.detected for m in bob.measure_batch(z1, bases=bases, eff_scale=scale))
+
+    def test_spurious_clicks_and_dark_scale(self):
+        bob = Bob(seed=2, detection_efficiency=1.0, dark_count_prob=0.5)
+        vac = np.zeros((20000, 2), dtype=np.complex128)
+        blinded = bob.measure_batch(vac, dark_scale=np.zeros(20000))
+        assert not any(m.detected for m in blinded)
+        spurious = bob.measure_batch(vac, spurious_click_prob=np.full(20000, 0.2),
+                                     dark_scale=np.zeros(20000))
+        rate = np.mean([m.detected for m in spurious])
+        ones = np.mean([m.outcome for m in spurious if m.detected])
+        assert 0.18 < rate < 0.22 and 0.45 < ones < 0.55
+
+    def test_pns_block_is_loss_without_errors(self):
+        r = self._sim("pns_storage", mean_photon_number=0.1, single_photon_strategy="block",
+                      single_photon_block_prob=0.5)
+        # Loss = block_prob * P(n=1 | n>=1) = 0.5 * 0.951
+        assert 0.44 < 1 - r.bob_detected.mean() < 0.51
+        assert r.qber < 0.01
+
+    def test_pure_time_shift_is_outcome_dependent_loss(self):
+        r = self._sim("time_shift", time_shift=0.15, det_width=0.3, det1_peak_time=0.3)
+        assert 1 - r.bob_detected.mean() > 0.1
+        assert r.qber < 0.01
+
+    def test_time_shift_intercept_converts_errors_into_loss(self):
+        r = self._sim("time_shift_intercept", time_shift=0.15, det_width=0.25,
+                      det1_peak_time=0.35, intercept_prob=1.0)
+        assert 0.15 < r.qber < 0.23  # below plain intercept-resend's 0.25
+        assert 1 - r.bob_detected.mean() > 0.1
+
+    def test_trojan_horse_basis_read_is_error_free(self):
+        r = self._sim("trojan_horse", probe_photons=1000, back_reflection_coeff=1e-2,
+                      basis_inference_prob=1.0)
+        assert r.eve_intercepted.mean() > 0.99
+        assert r.qber < 0.01
+
+    def test_trojan_horse_probe_light_adds_errors(self):
+        # probe_click_prob = 1 - exp(-1000 * 2.2e-4) ~ 0.2; on a detected photon a spurious
+        # click in the other detector (1/2) is resolved at random (1/2): QBER ~ 0.2 / 4
+        r = self._sim("trojan_horse", probe_photons=1000, back_reflection_coeff=1e-2,
+                      basis_inference_prob=1.0, detector_leak_coeff=2.2e-4)
+        assert 0.035 < r.qber < 0.065
+
+    def test_blinding_halves_clicks_without_errors_or_dark_counts(self):
+        r = run_bb84_simulation(n_transmissions=20000, seed=6, detection_efficiency=1.0,
+                                dark_count_prob=0.05, attack_type="fake_state",
+                                attack_params={"attack_subtype": "blinding"})
+        assert 0.47 < r.bob_detected.mean() < 0.53
+        assert r.qber < 0.01
+        assert not r.bob_is_dark_count.any()
+
+    def test_detector_mismatch_residual_clicks_give_errors(self):
+        r = self._sim("fake_state", attack_subtype="detector_mismatch", mismatch_residual=0.2)
+        # clicks: 1/2 (Eve's basis) + 1/2 * 0.2; QBER = 0.5*0.2*0.5 / 0.6 ~ 0.083
+        assert 0.57 < r.bob_detected.mean() < 0.63
+        assert 0.06 < r.qber < 0.11
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -24,8 +24,20 @@ The current `data/bb84_run2/` dataset was generated with fixed parameters on an 
 - [x] **DONE**: Give time_shift a timing observable — now produces QBER ~0.25 (distinct from normal=0.0, photon_number_splitting=0.0)
 - [x] **DONE**: Review fake_state: QBER exactly 50% is wrong for detector-mismatch
 - [x] **DONE**: Review quantum_cloning: QBER 14.8% vs expected 16.7% (1/6)
+- [x] **DONE (2026-11-21)**: Fix 5 attack classes (PNS, beam_splitting, time_shift, trojan_horse, fake_state) silently simulated with `attack_type="none"` — added `attack_type` to `ATTACK_PARAM_RANGES` + regression tests. Invalidates all earlier BB84 pilot results (see CURRENT_FINDINGS.md correction)
+- [x] **DONE (2026-11-22)**: `Bob.measure_batch()` ignored zero-norm (lost) photons and recorded them as bit-0 clicks — all loss (channel, beam splitting, PNS, trojan saturation) became bit-0 bias + spurious QBER. The 2026-11-19 fix only covered `measure()`. Regression tests: `tests/test_bb84.py::TestPhotonLoss`
+- [x] **DONE (2026-11-22)**: `run_bb84_simulation()` dropped `loss_probability` for `ideal` channels (half of all sessions)
+- [x] **DONE (2026-11-22)**: Beam splitting / PNS drew vacuum pulses (n=0, 67–90% of draws) and passed them through, diluting attack loss ~5× → now zero-truncated Poisson (`sample_nonempty_photon_number`)
+- [x] **DONE (2026-11-22)**: `data/bb84/` regenerated after the fixes below (old copy in `data/bb84_pre_simulator_fixes/`, do not use)
+- [x] **DONE (2026-11-22)**: Bob-side detector-control hook (`AttackResult.bob_eff_scale` / `bob_spurious_click_prob` / `bob_dark_scale`, Bob's bases drawn before Eve) + redesigned attacks: time shift via detector efficiency mismatch, trojan horse reads Bob's basis and leaks probe clicks, fake state `detector_mismatch` / new `blinding`. Previously `time_shift_intercept` ≈ partial IR, trojan horse = saturation loss, 70% of fake-state sessions had no effect. Pilot: 79.1% accuracy (was 49.3%). Details in NEWCHANGES.md
+- [x] **DONE (2026-11-22)**: PNS uses the standard `block` strategy (Brassard et al. 2000) instead of `pass` (no effect) / `intercept_resend` (= IR)
+- [x] **DONE (2026-11-22)**: `create_attack()` now applies intercept-resend's randomized `p_z`
+- [ ] Attack parameter ranges in `ATTACK_PARAM_RANGES` are modelling choices (the paper gives none) — document them in the report and test sensitivity
+- [ ] Alice is a single-photon source: the mean photon number μ exists only inside the PNS and beam-splitting attacks, so normal sessions have no multi-photon pulses
+- [ ] Decide whether `key_gen_rate` being constant 0 for `quantum_cloning` (QBER always > 11%) is acceptable — currently fails `test_no_constant_features_within_class`
 - [ ] Fix broken features: `key_gen_rate` is 0 for normal; `permutation_entropy` is constant
-- [ ] Fix package issues: missing `.datasets` import, `tqdm` not in `pyproject.toml`
+- [x] **DONE**: Remove dead `.datasets` import from `temporal_qber/__init__.py` (package was never committed — hidden by unanchored `datasets/` in `.gitignore`, now `/datasets/`)
+- [ ] Declare `tqdm` in `pyproject.toml` (currently only installed transitively via `shap`/`kaggle`)
 
 ### Phase 2: Pilot and leakage checks (in progress)
 - [ ] Generate pilot of ~200 sessions per class
@@ -45,8 +57,8 @@ The current `data/bb84_run2/` dataset was generated with fixed parameters on an 
 - [ ] Validate fast path reproduces reference results (normal ~0% QBER, intercept_resend ~25% QBER)
 
 ### Phase 4: Full run (24k sessions)
-- [ ] **DONE: Regenerate full 24,000-session BB84 dataset** — With fixed simulator and randomized parameters (`data/bb84_run2/`)
-- [ ] Run leakage tests against regenerated dataset (should pass all 13 tests)
+- [x] **DONE (2026-11-21)**: Regenerate full 24,000-session BB84 dataset (3000/class, 100k transmissions, 16 workers, 45 min) → `data/bb84/` (not committed). Command: `OMP_NUM_THREADS=1 uv run python scripts/generate_bb84_dataset.py --workers 16 --output-dir data/bb84`. Pre-fix dataset with 5 unattacked classes kept at `data/bb84_bug_attack_type_none/` (do not use)
+- [x] **DONE**: Run leakage tests against regenerated dataset — 14/15 pass; fails `test_no_constant_features_within_class` (`key_gen_rate` constant 0 for `time_shift`, see Phase 1 item)
 - [ ] Run full BB84 pipeline with multiple seeds and unseen-parameter splits
 - [ ] Run feature-group ablation on BB84 data (add keep-only-one-group runs)
 - [ ] Add cross-validation (`cv_*` fields are currently null)

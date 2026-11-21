@@ -207,9 +207,18 @@ class BB84Protocol:
             progress_callback("alice_prepare", 1)
             progress_callback("eve_attack", 0)
         
+        # Bob's basis choices, drawn up front with the same RNG call measure_batch() would
+        # make (so results are unchanged), so that attacks reading Bob's apparatus can use them.
+        bob_bases_drawn = self.bob.rng.integers(0, 2, size=self.n_transmissions, dtype=np.int8)
+
         # Step 2: Eve's attack on transmitted states
-        attack_results = self.attack.attack_batch(alice_states, alice_bases, alice_bits)
+        attack_results = self.attack.attack_batch(alice_states, alice_bases, alice_bits,
+                                                  bob_bases=bob_bases_drawn)
         attacked_states = np.array([r.transmitted_state for r in attack_results], dtype=np.complex128)
+        # Detector side-channel effects (passed to Bob only when some attack result sets them)
+        eff_scale = np.array([r.bob_eff_scale for r in attack_results], dtype=np.float64)
+        spurious_click_prob = np.array([r.bob_spurious_click_prob for r in attack_results], dtype=np.float64)
+        dark_scale = np.array([r.bob_dark_scale for r in attack_results], dtype=np.float64)
         
         if progress_callback:
             progress_callback("eve_attack", 1)
@@ -223,7 +232,13 @@ class BB84Protocol:
             progress_callback("bob_measure", 0)
         
         # Step 3: Bob chooses bases and measures
-        bob_measurements = self.bob.measure_batch(channel_output_states)
+        bob_measurements = self.bob.measure_batch(
+            channel_output_states,
+            bases=bob_bases_drawn,
+            eff_scale=eff_scale if np.any(eff_scale != 1.0) else None,
+            spurious_click_prob=spurious_click_prob if np.any(spurious_click_prob > 0) else None,
+            dark_scale=dark_scale if np.any(dark_scale != 1.0) else None,
+        )
         
         if progress_callback:
             progress_callback("bob_measure", 1)
@@ -379,10 +394,11 @@ def run_bb84_simulation(
     Returns:
         BB84Result
     """
+    # Build the channel whenever it has parameters, including "ideal" (noiseless but
+    # possibly lossy): previously loss_probability was silently dropped for ideal channels.
     channel = None
-    if channel_type != "ideal":
-        channel_params = channel_params or {}
-        channel = create_channel(channel_type, seed=seed, **channel_params)
+    if channel_type != "ideal" or channel_params:
+        channel = create_channel(channel_type, seed=seed, **dict(channel_params or {}))
     
     protocol = BB84Protocol(
         n_transmissions=n_transmissions,

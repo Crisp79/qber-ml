@@ -118,6 +118,27 @@ class TestParameterRandomization:
             r_values.append(result['attack_params'].get('reflection_coeff', 0.1))
         assert np.std(r_values) > 0.01, "Beam splitting reflection_coeff is constant"
 
+    def test_every_attack_class_runs_a_real_attack(self):
+        """Non-normal classes must map to an attack that create_attack() builds.
+
+        Regression: classes missing "attack_type" in ATTACK_PARAM_RANGES silently
+        fell back to "none", producing unattacked sessions under an attack label.
+        """
+        from temporal_qber.simulator.attacks import NoAttack, create_attack
+
+        rng = np.random.default_rng(42)
+        for class_name in BB84_CLASSES:
+            for _ in range(20):
+                result = randomize_attack_params(class_name, rng)
+                attack = create_attack(result['attack_type'], seed=0, **result['attack_params'])
+                if class_name == "normal":
+                    assert isinstance(attack, NoAttack)
+                else:
+                    assert result['attack_type'] != "none", \
+                        f"{class_name} randomizes to attack_type='none'"
+                    assert not isinstance(attack, NoAttack), \
+                        f"{class_name} builds a NoAttack"
+
 
 class TestDatasetLeakage:
     """Test for label leakage in the generated BB84 dataset."""
@@ -264,6 +285,18 @@ class TestDatasetLeakage:
                     f"overall_qber perfectly separates class '{class_name}' "
                     f"from all others - potential leakage"
                 )
+
+    def test_attack_classes_were_actually_attacked(self, bb84_df):
+        """Every non-normal session must have run an attack; normal sessions must not."""
+        if 'attack_type' not in bb84_df.columns:
+            pytest.skip("attack_type column not found")
+        is_normal = bb84_df['class_label'] == 'normal'
+        unattacked = bb84_df[~is_normal & (bb84_df['attack_type'] == 'none')]
+        assert unattacked.empty, (
+            "Sessions labelled as attacks but simulated with attack_type='none': "
+            f"{unattacked['class_label'].value_counts().to_dict()}"
+        )
+        assert (bb84_df.loc[is_normal, 'attack_type'] == 'none').all()
 
 
 class TestFeatureColumnCount:

@@ -238,25 +238,40 @@ ATTACK_PARAM_RANGES = {
         "interception_prob_range": (0.3, 1.0),  # for partial IR
         "p_z_range": (0.4, 0.6),  # Eve's Z basis bias (0.5 = unbiased)
     },
+    # Every attack class MUST set "attack_type" (a create_attack() name); a missing key
+    # silently falls back to "none" and produces unattacked sessions under an attack label.
     "photon_number_splitting": {
+        "attack_type": "pns_storage",
         "mu_range": (0.1, 0.4),  # Mean photon number for WCP
-        "strategies": ["pass", "intercept_resend"],
-        "strategy_probs": [0.8, 0.2],
+        # Standard PNS (Brassard et al. 2000): block single-photon pulses. "pass" has no
+        # observable effect at Bob and "intercept_resend" is plain intercept-resend.
+        "strategies": ["block"],
+        "strategy_probs": [1.0],
+        "block_prob_range": (0.2, 0.7),  # fraction of single-photon pulses Eve blocks
     },
     "beam_splitting": {
+        "attack_type": "beam_splitting",
         "reflection_coeff_range": (0.05, 0.3),  # Eve's tap fraction
         "mu_range": (0.1, 0.4),
     },
     "time_shift": {
-        "time_shift_range": (0.3, 0.8),  # ns shift
-        "det_width_range": (0.5, 1.5),   # detector width
+        "attack_type": "time_shift_intercept",  # intercept_prob below is only used by this variant
+        # Gaussian efficiency curves of Bob's two detectors (ns). With these ranges the
+        # efficiency ratio disfavoured/favoured detector at the shifted time spans ~0.1-0.9.
+        "time_shift_range": (0.05, 0.2),  # shift past the favoured detector's peak
+        "det_width_range": (0.25, 0.5),   # detector efficiency-curve width
+        "det_separation_range": (0.15, 0.35),  # offset between the two detectors' peaks
         "intercept_prob_range": (0.5, 1.0),  # for combined time_shift+IR
     },
     "trojan_horse": {
+        "attack_type": "trojan_horse",
         "probe_photons_range": (500, 5000),
         "back_reflection_coeff_range": (1e-6, 1e-3),
         "basis_inference_prob_range": (0.7, 0.95),
-        "detector_saturation_prob_range": (0.0, 0.1),
+        "detector_saturation_prob_range": (0.0, 0.02),
+        # Fraction of probe photons reaching Bob's detectors in-gate; with 500-5000 probe
+        # photons this gives a spurious-click probability of ~0.003-0.18 per pulse.
+        "detector_leak_coeff_range": (5e-6, 4e-5),
     },
     "quantum_cloning": {
         "attack_type": "quantum_cloning",
@@ -264,8 +279,13 @@ ATTACK_PARAM_RANGES = {
         "cloning_type_probs": [0.4, 0.3, 0.2, 0.1],
     },
     "fake_state": {
-        "subtypes": ["phase_remapped", "detector_mismatch", "wavelength", "intensity", "combined", "time_bin"],
-        "subtype_probs": [0.2, 0.3, 0.1, 0.1, 0.1, 0.2],
+        "attack_type": "fake_state",
+        # "wavelength", "intensity", "combined" and "time_bin" are no longer sampled: the
+        # first three have no observable effect at Bob and "combined" duplicates
+        # phase_remapped.
+        "subtypes": ["phase_remapped", "detector_mismatch", "blinding"],
+        "subtype_probs": [0.34, 0.33, 0.33],
+        "mismatch_residual_range": (0.0, 0.3),  # detector_mismatch: residual efficiency outside Eve's basis
         "phase_shift_range": (0.0, np.pi),
         "det0_efficiency_range": (0.7, 1.0),
         "det1_efficiency_range": (0.7, 1.0),
@@ -312,6 +332,7 @@ def randomize_attack_params(class_name: str, rng: np.random.Generator) -> Dict[s
             "single_photon_strategy": rng.choice(
                 ranges["strategies"], p=ranges["strategy_probs"]
             ),
+            "single_photon_block_prob": float(rng.uniform(*ranges["block_prob_range"])),
         }
     
     elif class_name == "beam_splitting":
@@ -324,6 +345,7 @@ def randomize_attack_params(class_name: str, rng: np.random.Generator) -> Dict[s
         attack_params = {
             "time_shift": float(rng.uniform(*ranges["time_shift_range"])),
             "det_width": float(rng.uniform(*ranges["det_width_range"])),
+            "det1_peak_time": float(rng.uniform(*ranges["det_separation_range"])),
             "intercept_prob": float(rng.uniform(*ranges["intercept_prob_range"])),
         }
     
@@ -339,6 +361,7 @@ def randomize_attack_params(class_name: str, rng: np.random.Generator) -> Dict[s
             "detector_saturation_prob": float(
                 rng.uniform(*ranges["detector_saturation_prob_range"])
             ),
+            "detector_leak_coeff": float(rng.uniform(*ranges["detector_leak_coeff_range"])),
         }
     
     elif class_name == "quantum_cloning":
@@ -356,6 +379,7 @@ def randomize_attack_params(class_name: str, rng: np.random.Generator) -> Dict[s
             "det1_efficiency": float(rng.uniform(*ranges["det1_efficiency_range"])),
             "multi_photon_prob": float(rng.uniform(*ranges["multi_photon_prob_range"])),
             "wavelength_shift": float(rng.uniform(*ranges["wavelength_shift_range"])),
+            "mismatch_residual": float(rng.uniform(*ranges["mismatch_residual_range"])),
         }
     
     else:

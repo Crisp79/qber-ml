@@ -24,7 +24,7 @@ import math
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
-from .base import BaseAttack, AttackResult
+from .base import BaseAttack, AttackResult, sample_nonempty_photon_number
 from ..alice import Basis, Bit, BB84_STATES, measure_state_in_basis, sample_measurement
 
 
@@ -88,8 +88,8 @@ class BeamSplittingAttack(BaseAttack):
         self.p_z = 0.5
     
     def _sample_photon_number(self) -> int:
-        """Sample photon number from Poisson distribution."""
-        return self.rng.poisson(self.mu)
+        """Sample the photon number of a non-empty pulse (see sample_nonempty_photon_number)."""
+        return sample_nonempty_photon_number(self.rng, self.mu)
     
     def _choose_basis(self) -> int:
         """Eve randomly chooses a measurement basis."""

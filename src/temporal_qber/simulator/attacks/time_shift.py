@@ -134,121 +134,69 @@ class TimeShiftAttack(BaseAttack):
         """Prepare a new quantum state based on Eve's measurement."""
         return BB84_STATES[(basis, bit)].copy()
     
-    def attack(self, state: np.ndarray, alice_basis: int, alice_bit: int) -> AttackResult:
+    def _shifted_efficiencies(self, favoured: int) -> tuple:
         """
-        Perform time-shift attack on a single transmission.
-        
-        Eve shifts the pulse arrival time. The shifted arrival time
-        affects Bob's detector efficiencies differently for the two outcomes.
-        
-        For simulation:
-        1. Eve shifts pulse arrival time by Δt
-        2. Bob's detectors have time-dependent efficiency η(t)
-        3. At time t+Δt, η_0(Δt) ≠ η_1(Δt), creating bias
-        4. Bob's detection becomes biased toward the more efficient detector
-        5. This introduces QBER because Bob may click the "wrong" detector
-        
-        The attack works because:
-        - Alice sends |0⟩_Z → correct detector is D0
-        - Eve shifts arrival time so D0 is more efficient than D1
-        - Bob's D0 clicks even when Alice sent |1⟩_Z → wrong outcome → QBER
+        Bob's detector efficiencies (eta0, eta1) when Eve shifts the pulse to favour one detector.
+
+        Eve moves the arrival time past the favoured detector's peak, away from the other
+        detector's peak, by time_shift: the favoured detector keeps most of its efficiency
+        while the other one is far down its curve.
         """
-        # Nominal arrival time (without shift)
-        nominal_time = 0.0
-        
-        # Shifted arrival time
-        shifted_time = nominal_time + self.time_shift
-        
-        # Compute detector efficiencies at shifted time
-        det0_eff = self._detector_efficiency(0, shifted_time)
-        det1_eff = self._detector_efficiency(1, shifted_time)
-        
-        # Bob's basis choice (Bob chooses basis randomly)
-        bob_basis = self._choose_basis()
-        
-        # Quantum measurement probabilities
-        prob_0_quantum, prob_1_quantum = self._measure_state_in_basis(state, bob_basis)
-        
-        # Time-shift attack: detector efficiency bias causes Bob to click
-        # the "wrong" detector more often, introducing QBER
-        #
-        # If Alice sent |0⟩_Z, correct detector is D0. But D1 may click
-        # if it's more efficient at the shifted time.
-        if bob_basis == Basis.Z:
-            # Correct detector: D0 for |0⟩, D1 for |1⟩
-            correct_det = alice_bit  # 0→D0, 1→D1
-            wrong_det = 1 - alice_bit
-            
-            det_correct = det0_eff if correct_det == 0 else det1_eff
-            det_wrong = det1_eff if correct_det == 0 else det0_eff
-            
-            total = det_correct + det_wrong
-            if total > 0:
-                p_correct = det_correct / total
-            else:
-                p_correct = 0.5
-            
-            # Bob clicks correct detector with prob p_correct, wrong with p_wrong
-            bob_outcome = alice_bit if self.rng.random() < p_correct else 1 - alice_bit
-            
-        else:  # X basis
-            # In X basis, |+⟩ and |-⟩ are superpositions of |0⟩ and |1⟩
-            # Detector efficiency bias affects measurement outcome probabilities
-            # directly since both detectors can fire for either basis state
-            p0 = prob_0_quantum * det0_eff
-            p1 = prob_1_quantum * det1_eff
-            total = p0 + p1
-            if total > 0:
-                p0 /= total
-                p1 /= total
-            else:
-                p0 = p1 = 0.5
-            
-            bob_outcome = 0 if self.rng.random() < p0 else 1
-        
-        # Eve just shifts time, doesn't measure the state directly
-        # The state passes through with time shift applied
-        transmitted_state = state.copy()
-        
+        direction = -1.0 if self.det1_peak >= self.det0_peak else 1.0
+        if favoured == 0:
+            t = self.det0_peak + direction * self.time_shift
+        else:
+            t = self.det1_peak - direction * self.time_shift
+        return float(self._detector_efficiency(0, t)), float(self._detector_efficiency(1, t))
+
+    def _pure_shift_result(self, state: np.ndarray) -> AttackResult:
+        favoured = int(self.rng.integers(0, 2))
+        eta0, eta1 = self._shifted_efficiencies(favoured)
         return TimeShiftResult(
             intercepted=True,
             time_shift=self.time_shift,
-            det0_efficiency=det0_eff,
-            det1_efficiency=det1_eff,
-            bob_basis=bob_basis,
+            det0_efficiency=eta0,
+            det1_efficiency=eta1,
+            bob_basis=None,
             eve_basis=None,  # Pure time-shift: Eve doesn't measure
             eve_outcome=None,
             original_state=state.copy(),
-            transmitted_state=transmitted_state,
+            transmitted_state=state.copy(),
             eve_info={
                 "time_shift": self.time_shift,
-                "shifted_time": shifted_time,
-                "det0_efficiency": det0_eff,
-                "det1_efficiency": det1_eff,
-                "bias_factor": det0_eff / det1_eff if det1_eff > 0 else float('inf'),
-                "bob_basis": bob_basis,
-                "bob_outcome": bob_outcome,
-                "attack_type": "time_shift",
-                "note": "Eve shifts pulse arrival time to exploit detector efficiency mismatch"
-            }
+                "favoured_detector": favoured,
+                "det0_efficiency": eta0,
+                "det1_efficiency": eta1,
+                "attack_type": "time_shift_pure",
+            },
+            bob_eff_scale=(eta0, eta1),
         )
-    
+
+    def attack(self, state: np.ndarray, alice_basis: int, alice_bit: int) -> AttackResult:
+        """
+        Pure time-shift attack (Qi, Fung, Lo & Ma, Quantum Inf. Comput. 7, 73 (2007);
+        Zhao, Fung, Qi, Chen & Lo, Phys. Rev. A 78, 042333 (2008)).
+
+        For each pulse Eve randomly picks one of Bob's detectors to favour and shifts the
+        arrival time away from the other detector's efficiency peak. The photon itself is
+        untouched, so no error is introduced; but a click from the disfavoured detector
+        becomes unlikely. Observable at Bob: outcome-dependent loss (lower detection rate),
+        while a click tells Eve which bit Bob most likely obtained.
+        """
+        return self._pure_shift_result(state)
+
     def get_detector_bias(self) -> float:
-        """Get the detector efficiency bias factor at shifted time."""
-        shifted_time = self.time_shift
-        det0 = self._detector_efficiency(0, shifted_time)
-        det1 = self._detector_efficiency(1, shifted_time)
-        if det1 > 0:
-            return det0 / det1
+        """Efficiency ratio favoured/other detector at the shifted time (mismatch strength)."""
+        eta_fav, eta_other = self._shifted_efficiencies(0)
+        if eta_other > 0:
+            return eta_fav / eta_other
         return float('inf')
 
 
 class TimeShiftAttackWithIntercept(TimeShiftAttack):
     """
-    Time-shift attack combined with intercept-resend.
-    
-    Eve shifts the pulse time AND performs intercept-resend measurement.
-    This is a more powerful attack combining both techniques.
+    Time-shift attack combined with intercept-resend, exploiting detector efficiency
+    mismatch (faked-state style; Makarov, Anisimov & Skaar, Phys. Rev. A 74, 022313 (2006)).
     """
     
     def __init__(
@@ -271,67 +219,40 @@ class TimeShiftAttackWithIntercept(TimeShiftAttack):
     
     def attack(self, state: np.ndarray, alice_basis: int, alice_bit: int) -> AttackResult:
         """
-        Perform combined time-shift + intercept-resend attack.
-        
-        1. Eve shifts pulse arrival time
-        2. With probability intercept_prob, Eve also performs intercept-resend
-        3. Otherwise, Eve just lets the shifted pulse pass
+        With probability intercept_prob Eve measures Alice's photon in a random basis,
+        resends her result and times it to favour the detector of the bit she resends.
+        When Bob measures in Eve's basis he clicks on the favoured detector; when he
+        measures in the other basis (where intercept-resend errors arise) half of his
+        would-be clicks land on the disfavoured detector and are suppressed. Per
+        intercepted sifted bit the QBER falls from 1/4 towards 1/6 as the efficiency
+        ratio eta_other/eta_favoured goes from 1 to 0, and Bob loses extra clicks.
+        Otherwise Eve applies the pure time shift.
         """
-        # First apply time shift
-        shifted_time = self.time_shift
-        det0_eff = self._detector_efficiency(0, shifted_time)
-        det1_eff = self._detector_efficiency(1, shifted_time)
-        bias = det0_eff / det1_eff if det1_eff > 0 else float('inf')
-        
-        # Decide if Eve also intercepts
-        if self.rng.random() < self.intercept_prob:
-            # Combined attack: time-shift + intercept-resend
-            eve_basis = self._choose_basis()
-            prob_0, prob_1 = self._measure_state_in_basis(state, eve_basis)
-            eve_outcome = 0 if self.rng.random() < prob_0 else 1
-            transmitted_state = self._prepare_state(eve_basis, eve_outcome)
-            
-            return TimeShiftResult(
-                intercepted=True,
-                time_shift=self.time_shift,
-                det0_efficiency=det0_eff,
-                det1_efficiency=det1_eff,
-                bob_basis=None,  # Eve controls the state
-                eve_basis=eve_basis,
-                eve_outcome=eve_outcome,
-                original_state=state.copy(),
-                transmitted_state=transmitted_state,
-                eve_info={
-                    "time_shift": self.time_shift,
-                    "shifted_time": shifted_time,
-                    "det0_efficiency": det0_eff,
-                    "det1_efficiency": det1_eff,
-                    "bias_factor": bias,
-                    "eve_basis": eve_basis,
-                    "eve_outcome": eve_outcome,
-                    "attack_type": "time_shift_intercept",
-                    "note": "Combined time-shift + intercept-resend"
-                }
-            )
-        else:
-            # Pure time-shift
-            return TimeShiftResult(
-                intercepted=True,
-                time_shift=self.time_shift,
-                det0_efficiency=det0_eff,
-                det1_efficiency=det1_eff,
-                bob_basis=self._choose_basis(),
-                eve_basis=None,
-                eve_outcome=None,
-                original_state=state.copy(),
-                transmitted_state=state.copy(),
-                eve_info={
-                    "time_shift": self.time_shift,
-                    "shifted_time": shifted_time,
-                    "det0_efficiency": det0_eff,
-                    "det1_efficiency": det1_eff,
-                    "bias_factor": bias,
-                    "attack_type": "time_shift_pure",
-                    "note": "Pure time-shift attack (no intercept)"
-                }
-            )
+        if self.rng.random() >= self.intercept_prob:
+            return self._pure_shift_result(state)
+
+        eve_basis = self._choose_basis()
+        prob_0, _ = self._measure_state_in_basis(state, eve_basis)
+        eve_outcome = 0 if self.rng.random() < prob_0 else 1
+        eta0, eta1 = self._shifted_efficiencies(eve_outcome)
+        return TimeShiftResult(
+            intercepted=True,
+            time_shift=self.time_shift,
+            det0_efficiency=eta0,
+            det1_efficiency=eta1,
+            bob_basis=None,  # Eve controls the state
+            eve_basis=eve_basis,
+            eve_outcome=eve_outcome,
+            original_state=state.copy(),
+            transmitted_state=self._prepare_state(eve_basis, eve_outcome),
+            eve_info={
+                "time_shift": self.time_shift,
+                "favoured_detector": eve_outcome,
+                "det0_efficiency": eta0,
+                "det1_efficiency": eta1,
+                "eve_basis": eve_basis,
+                "eve_outcome": eve_outcome,
+                "attack_type": "time_shift_intercept",
+            },
+            bob_eff_scale=(eta0, eta1),
+        )

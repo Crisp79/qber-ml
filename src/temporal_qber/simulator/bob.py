@@ -112,14 +112,28 @@ class Bob:
         self._measurements.append(measurement)
         return measurement
     
-    def measure_batch(self, states: np.ndarray, bases: Optional[np.ndarray] = None) -> List[BobMeasurement]:
+    def measure_batch(
+        self,
+        states: np.ndarray,
+        bases: Optional[np.ndarray] = None,
+        eff_scale: Optional[np.ndarray] = None,
+        spurious_click_prob: Optional[np.ndarray] = None,
+        dark_scale: Optional[np.ndarray] = None,
+    ) -> List[BobMeasurement]:
         """
         Measure a batch of quantum states (vectorized).
-        
+
         Args:
             states: Array of state vectors (n, 2) complex
             bases: Optional array of measurement bases (0 or 1). If None, chooses randomly.
-            
+            eff_scale: Optional (n, 2) multipliers (0..1) on detection efficiency when the
+                bit-0 / bit-1 detector would fire (detector efficiency mismatch, e.g. time-shift).
+            spurious_click_prob: Optional (n,) probability that external light (e.g. trojan-horse
+                probe) makes a random detector click. Alone it gives a random bit; together with
+                a click in the other detector it is a double click, assigned a random bit.
+            dark_scale: Optional (n,) multiplier on the dark-count probability (0 = blinded).
+            With all three None the random draws and results are identical to the plain model.
+
         Returns:
             List of BobMeasurement
         """
@@ -146,10 +160,15 @@ class Bob:
         prob_1 = np.where(bases == 0, prob_1_z, prob_1_x)
         
         # Dark count check (independent of photon arrival)
-        is_dark_count = self.rng.random(n) < self.dark_count_prob
+        dark_p = self.dark_count_prob if dark_scale is None else self.dark_count_prob * np.asarray(dark_scale)
+        is_dark_count = self.rng.random(n) < dark_p
         
-        # Photon detection
-        detected_photon = self.rng.random(n) < self.detection_efficiency
+        # Photon detection. A zero-norm (vacuum) state means the photon was lost in the
+        # channel or removed by Eve: only a dark count can then produce a click. Without
+        # this check a lost photon was "detected" as bit 0 (prob_1 = 0), turning loss into
+        # a bit-0 bias and spurious QBER. Mirrors the check in measure().
+        has_photon = np.linalg.norm(states, axis=1) > 0
+        detected_photon = has_photon & (self.rng.random(n) < self.detection_efficiency)
         
         # Determine outcomes
         outcomes = np.zeros(n, dtype=np.int8)
@@ -161,10 +180,29 @@ class Bob:
         # Normal photon detection
         detect_mask = detected_photon & ~is_dark_count
         outcomes[detect_mask] = (self.rng.random(int(np.sum(detect_mask))) < prob_1[detect_mask]).astype(np.int8)
-        
+
+        # Detector efficiency mismatch: the photon click survives with the multiplier of the
+        # detector that fired (outcome-dependent loss).
+        if eff_scale is not None:
+            eff_scale = np.asarray(eff_scale, dtype=np.float64)
+            keep_prob = np.where(outcomes == 0, eff_scale[:, 0], eff_scale[:, 1])
+            lost = detect_mask & (self.rng.random(n) >= keep_prob)
+            detected_photon = detected_photon & ~lost
+
         # No detection event
         detected = detected_photon | is_dark_count
-        
+
+        # Spurious clicks from external light (random detector).
+        if spurious_click_prob is not None:
+            spurious = self.rng.random(n) < np.asarray(spurious_click_prob)
+            spurious_det = self.rng.integers(0, 2, size=n).astype(np.int8)
+            alone = spurious & ~detected
+            outcomes[alone] = spurious_det[alone]
+            double = spurious & detected & (spurious_det != outcomes)
+            outcomes[double] = self.rng.integers(0, 2, size=int(np.sum(double))).astype(np.int8)
+            is_dark_count = is_dark_count | alone  # a noise click, not a signal detection
+            detected = detected | spurious
+
         # Build result list
         measurements = []
         for i in range(n):

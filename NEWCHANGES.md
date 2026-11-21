@@ -2,7 +2,7 @@
 
 Log of every change made to this repository in the Claude Code sessions starting 2026-11-20.
 Newest entries are at the bottom of each section; the log is updated after every change.
-Nothing listed here has been committed yet (branch `test`, base commit `1d4844f`).
+Entries 1–22 are committed on branch `test` (base commit `1d4844f`); see entry 22.
 
 ---
 
@@ -152,6 +152,11 @@ Leakage checks on the pilot: best single-feature one-vs-rest AUC per class 0.81�
 ### 21. Docs
 - **`TODO.md`:** marked the side-channel hook, attack redesign, PNS strategy and `p_z` items done; added two open items (document/sensitivity-test the attack parameter ranges; Alice is a single-photon source, so μ exists only inside the PNS and beam-splitting attacks).
 - **`CURRENT_FINDINGS.md`:** second correction note (2026-11-22) listing the simulator bugs and the pilot result.
+
+### 22. Committed
+- All changes in entries 1–21 (17 files plus this log) committed on branch `test` on top of `7d6a5b9` (which added this file). `data/` is git-ignored, so no datasets are included.
+- Push from Claude's shell failed (no GitHub credentials there); the user pushed it to `origin/test`.
+- Commit message amended to drop the `Co-Authored-By: Claude` trailer at the user's request. This rewrites the already-pushed commit, so GitHub is updated with a force push.
 
 ### In progress
 - Full 24,000-session regeneration into `data/bb84/` (old one moved to `data/bb84_pre_simulator_fixes/`).

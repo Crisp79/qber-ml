@@ -52,7 +52,8 @@ secrets/
 # Dataset and downloaded data
 # ==============================
 data/
-datasets/
+# Anchored to the repo root so it cannot hide a source package such as src/temporal_qber/datasets/
+/datasets/
 *.csv
 *.parquet
 *.feather

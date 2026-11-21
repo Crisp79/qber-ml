@@ -172,20 +172,25 @@ def create_attack(
     if attack_type == 'none':
         return NoAttack(seed=seed)
     elif attack_type == 'intercept_resend':
-        return InterceptResendAttack(seed=seed)
+        attack = InterceptResendAttack(seed=seed)
+        attack.set_basis_probability(kwargs.get('p_z', 0.5))  # Eve's Z-basis bias
+        return attack
     elif attack_type == 'partial_intercept_resend':
         interception_prob = kwargs.get('interception_prob', 0.5)
-        return PartialInterceptResendAttack(
-            interception_prob=interception_prob, 
+        attack = PartialInterceptResendAttack(
+            interception_prob=interception_prob,
             seed=seed
         )
+        attack.set_basis_probability(kwargs.get('p_z', 0.5))
+        return attack
     elif attack_type == 'pns':
         mean_photon_number = kwargs.get('mean_photon_number', 0.1)
         single_photon_strategy = kwargs.get('single_photon_strategy', 'pass')
         return PNSAttack(
             mean_photon_number=mean_photon_number,
             single_photon_strategy=single_photon_strategy,
-            seed=seed
+            seed=seed,
+            single_photon_block_prob=kwargs.get('single_photon_block_prob', 1.0),
         )
     elif attack_type == 'pns_storage':
         mean_photon_number = kwargs.get('mean_photon_number', 0.1)
@@ -193,7 +198,8 @@ def create_attack(
         return PNSAttackWithStorage(
             mean_photon_number=mean_photon_number,
             single_photon_strategy=single_photon_strategy,
-            seed=seed
+            seed=seed,
+            single_photon_block_prob=kwargs.get('single_photon_block_prob', 1.0),
         )
     elif attack_type == 'beam_splitting':
         reflection_coeff = kwargs.get('reflection_coeff', 0.1)
@@ -249,6 +255,7 @@ def create_attack(
             back_reflection_coeff=back_reflection_coeff,
             basis_inference_prob=basis_inference_prob,
             detector_saturation_prob=detector_saturation_prob,
+            detector_leak_coeff=kwargs.get('detector_leak_coeff', 0.0),
             seed=seed
         )
     elif attack_type == 'trojan_horse_active':
@@ -261,6 +268,7 @@ def create_attack(
             back_reflection_coeff=back_reflection_coeff,
             basis_inference_prob=basis_inference_prob,
             detector_saturation_prob=detector_saturation_prob,
+            detector_leak_coeff=kwargs.get('detector_leak_coeff', 0.0),
             seed=seed
         )
     elif attack_type == 'quantum_cloning':
@@ -297,7 +305,8 @@ def create_attack(
             det1_efficiency=det1_efficiency,
             multi_photon_prob=multi_photon_prob,
             wavelength_shift=wavelength_shift,
-            seed=seed
+            seed=seed,
+            mismatch_residual=kwargs.get('mismatch_residual', 0.0),
         )
     else:
         raise ValueError(f"Unknown attack type: {attack_type}. "

@@ -57,11 +57,13 @@ class FakeStateAttack(BaseAttack):
     BB84 states but exploit Bob's detector imperfections.
     
     Attack subtypes:
-    - phase_remapped: Eve shifts the phase of states
-    - detector_mismatch: Eve exploits detector efficiency mismatch
-    - wavelength: Eve uses wavelengths outside Bob's calibration
-    - intensity: Eve sends multi-photon pulses
-    - combined: Multiple techniques combined
+    - phase_remapped: Eve shifts the phase of states (basis-asymmetric errors)
+    - detector_mismatch: faked states exploiting detector efficiency mismatch - Bob clicks
+      (almost) only when he measures in Eve's basis (Makarov & Hjelme 2005)
+    - blinding: detectors blinded by bright light and triggered by bright pulses - Bob
+      clicks only in Eve's basis and has no dark counts (Lydersen et al. 2010)
+    - wavelength, intensity, time_bin: legacy subtypes with no observable effect at Bob
+    - combined: phase shift (as phase_remapped)
     """
     
     def __init__(
@@ -72,7 +74,8 @@ class FakeStateAttack(BaseAttack):
         det1_efficiency: float = 1.0,  # Detector 1 efficiency
         multi_photon_prob: float = 0.0,  # Probability of sending multi-photon pulse
         wavelength_shift: float = 0.0,  # Wavelength shift (nm)
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        mismatch_residual: float = 0.0,  # detector_mismatch: Bob's residual efficiency outside Eve's basis
     ):
         """
         Initialize fake state attack.
@@ -88,8 +91,11 @@ class FakeStateAttack(BaseAttack):
         """
         super().__init__(seed)
         
-        valid_subtypes = ["phase_remapped", "detector_mismatch", "wavelength", 
+        valid_subtypes = ["phase_remapped", "detector_mismatch", "blinding", "wavelength",
                          "intensity", "combined", "time_bin"]
+        if not 0 <= mismatch_residual <= 1:
+            raise ValueError(f"mismatch_residual must be in [0, 1], got {mismatch_residual}")
+        self.mismatch_residual = mismatch_residual
         if attack_subtype not in valid_subtypes:
             raise ValueError(f"attack_subtype must be one of {valid_subtypes}, "
                            f"got {attack_subtype}")
@@ -187,6 +193,9 @@ class FakeStateAttack(BaseAttack):
         Eve intercepts Alice's state and replaces it with a carefully
         crafted fake state designed to exploit Bob's detector imperfections.
         """
+        if self.attack_subtype in ("detector_mismatch", "blinding"):
+            return self._faked_state_attack(state)
+
         # Determine which basis Eve will use for her fake state
         # Eve doesn't know Alice's basis, so she guesses or uses a fixed strategy
         eve_basis = self.rng.integers(0, 2)  # Random basis guess
@@ -277,6 +286,51 @@ class FakeStateAttack(BaseAttack):
             }
         )
     
+    def _faked_state_attack(self, state: np.ndarray) -> AttackResult:
+        """
+        Faked-state attacks that make Bob click only when he measures in Eve's basis.
+
+        Eve measures Alice's photon in a random basis and resends a faked state that Bob's
+        detectors register only if his basis matches hers:
+        - "detector_mismatch": faked states timed into the detector efficiency-mismatch
+          region (Makarov & Hjelme, J. Mod. Opt. 52, 691 (2005)). In the other basis
+          Bob's detectors keep a residual efficiency mismatch_residual; those clicks are
+          random, i.e. an error on half of the sifted bits they produce.
+        - "blinding": detectors blinded by bright light and triggered by bright pulses
+          (Lydersen et al., Nat. Photonics 4, 686 (2010)). No click in the other basis
+          and no dark counts (blinded detectors are in linear mode).
+        Whenever Bob clicks on a sifted bit, Eve's basis equals Alice's, so errors come
+        only from residual clicks. The observable signature is the loss of about half of
+        Bob's clicks (and, for blinding, of his dark counts).
+        """
+        eve_basis = int(self.rng.integers(0, 2))
+        prob_0, _ = self._measure_state_in_basis(state, eve_basis)
+        eve_outcome = 0 if self.rng.random() < prob_0 else 1
+        blinding = self.attack_subtype == "blinding"
+        bases_match = self.bob_basis is None or self.bob_basis == eve_basis
+        scale = 1.0 if bases_match else (0.0 if blinding else self.mismatch_residual)
+        return FakeStateResult(
+            intercepted=True,
+            attack_subtype=self.attack_subtype,
+            fake_state_params={
+                "attack_subtype": self.attack_subtype,
+                "mismatch_residual": 0.0 if blinding else self.mismatch_residual,
+                "eve_basis_used": eve_basis,
+            },
+            bob_basis_guess=self.bob_basis,
+            eve_basis=eve_basis,
+            eve_outcome=eve_outcome,
+            original_state=state.copy(),
+            transmitted_state=self._prepare_state(eve_basis, eve_outcome),
+            eve_info={
+                "attack_subtype": self.attack_subtype,
+                "bob_clicks_allowed": bool(bases_match),
+                "attack_type": f"fake_state_{self.attack_subtype}",
+            },
+            bob_eff_scale=(scale, scale),
+            bob_dark_scale=0.0 if blinding else 1.0,
+        )
+
     def get_theoretical_stats(self) -> Dict[str, float]:
         """Get theoretical attack statistics."""
         stats = {
