@@ -150,13 +150,16 @@ def run_pipeline(
 ):
     """Run the complete ML pipeline on BB84 data."""
     
-    AVAILABLE_MODELS = ['random_forest', 'xgboost', 'svm']
+    # Names must match temporal_qber.config.AVAILABLE_MODELS; "svm" is accepted as an alias
+    # for "svm_rbf" (it used to be passed through unchanged and crashed create_models).
+    AVAILABLE_MODELS = ['random_forest', 'xgboost', 'svm_rbf']
     if models is None:
         models = AVAILABLE_MODELS.copy()
     else:
+        models = ['svm_rbf' if m == 'svm' else m for m in models]
         for m in models:
             if m not in AVAILABLE_MODELS:
-                raise ValueError(f"Unknown model: {m}. Available: {AVAILABLE_MODELS}")
+                raise ValueError(f"Unknown model: {m}. Available: {AVAILABLE_MODELS} (or 'svm')")
     
     # Setup logging
     experiment_id = experiment_name or f"bb84_{time.strftime('%Y%m%d_%H%M%S')}"
@@ -319,11 +322,16 @@ def run_pipeline(
                 train_time=result.get('train_time', 0),
                 eval_time=eval_result.get('eval_time', 0),
                 test_accuracy=eval_result['accuracy'],
-                cv_results=eval_result.get('cv_results', {}),
-                fold_metrics=eval_result.get('fold_metrics', []),
+                # Cross-validation runs during training (train_all_models), so its results
+                # live in `result`, not in the test-set evaluation (which never has them).
+                cv_results={
+                    'cv_scores': result.get('cv_scores', []),
+                    'cv_f1_scores': result.get('cv_f1_scores', []),
+                },
+                fold_metrics=result.get('fold_metrics', []),
                 aggregate_metrics={
-                    'accuracy': eval_result.get('cv_accuracy', 0),
-                    'macro_f1': eval_result.get('cv_macro_f1', 0),
+                    'accuracy': result.get('cv_accuracy_mean', 0),
+                    'macro_f1': result.get('cv_f1_macro_mean', 0),
                 },
                 model_path=f"{models_dir}/{model_name}.joblib",
                 plots=plots,
@@ -348,9 +356,11 @@ def run_pipeline(
                 'test_macro_precision': eval_result.get('macro_precision'),
                 'test_macro_recall': eval_result.get('macro_recall'),
                 'test_roc_auc': eval_result.get('roc_auc_ovr'),
-                'cv_accuracy': eval_result.get('cv_accuracy'),
-                'cv_macro_f1': eval_result.get('cv_macro_f1'),
-                'cv_std': eval_result.get('cv_std'),
+                'cv_accuracy': result.get('cv_accuracy_mean'),
+                'cv_macro_f1': result.get('cv_f1_macro_mean'),
+                'cv_std': result.get('cv_accuracy_std'),
+                'cv_macro_f1_std': result.get('cv_f1_macro_std'),
+                'cv_scores': result.get('cv_scores'),
                 'confusion_matrix': eval_result.get('confusion_matrix'),
                 'per_class': eval_result.get('per_class'),
                 'fnr_binary': eval_result.get('fnr_binary'),
@@ -393,8 +403,8 @@ def main():
                         help="Number of samples to use (stratified, default: all)")
     parser.add_argument("--no-shap", action="store_true", help="Disable SHAP explanations")
     parser.add_argument("--no-ablation", action="store_true", help="Disable feature group ablation")
-    parser.add_argument("--models", type=str, default="random_forest,xgboost,svm",
-                        help="Comma-separated list of models to train")
+    parser.add_argument("--models", type=str, default="random_forest,xgboost,svm_rbf",
+                        help="Comma-separated list of models to train (random_forest, xgboost, svm_rbf; 'svm' = svm_rbf)")
     parser.add_argument("--models-dir", type=str, default="models/bb84", help="Models output directory")
     parser.add_argument("--results-dir", "--output-dir", "--out-dir", type=str, default="results/bb84",
                         dest="results_dir",

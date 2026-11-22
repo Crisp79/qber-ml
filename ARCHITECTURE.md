@@ -19,39 +19,32 @@ Verified dataset properties:
 ### Track B — BB84 Temporal-QBER Detection (IMPLEMENTED)
 The BB84 simulation and temporal-QBER detection pipeline inspired by *Beyond the QBER Threshold: A Temporal QBER Based Machine Learning Framework for Multi Attack Detection in BB84 QKD* (arXiv:2608.04047v1).
 
-Current implementation status:
-- ✅ BB84 state preparation (Alice)
-- ✅ Basis selection and measurement (Bob)
-- ✅ Quantum channel models: Ideal, Depolarizing, Phase Flip, Amplitude Damping, Bit Flip
-- ✅ Photon loss and detector imperfections (detection efficiency, dark counts)
-- ✅ Basis reconciliation and sifted-bit generation
-- ✅ QBER calculation (overall session)
-- ✅ Temporal windowing (SessionConfig with W=50, configurable stride)
-- ✅ Temporal QBER extraction per window
+Current implementation status (simulator redesigned 2026-11-21 to 2026-11-23; every change is listed in `NEWCHANGES.md`):
+- ✅ **Alice:** BB84 state preparation; optional **decoy-state weak-coherent-pulse source** (`BB84Protocol(decoy_config=...)`). All generated datasets use it: signal μ = 0.5 / weak decoy ν = 0.1 / vacuum, chosen with probability 0.7 / 0.2 / 0.1, Poisson photon numbers. Only signal pulses form the sifted key and the 63 temporal features. Without `decoy_config` each transmission is one photon (original model).
+- ✅ **Photon numbers** are tracked through Eve (`AttackResult.photons_to_bob`), the channel (per-photon loss, `QuantumChannel.transmit_batch_photons`) and Bob.
+- ✅ **Bob:** two threshold detectors per basis; photon, dark count and external light each fire a detector. Double clicks are recorded and given a random bit (squashing). One empty monitoring gate per slot measures the in-situ dark-count rate.
+- ✅ **Detector side-channel hook:** attacks can set per-detector efficiency multipliers (`bob_eff_scale`), spurious clicks (`bob_spurious_click_prob`) and dark-count suppression (`bob_dark_scale`), and can read Bob's basis (`BaseAttack.bob_basis`) and Alice's photon number (`BaseAttack.photon_number`).
+- ✅ Quantum channel models: Ideal, Depolarizing, Phase Flip, Amplitude Damping, Bit Flip; photon loss on every channel type (including ideal)
+- ✅ Basis reconciliation and sifted-bit generation; QBER calculation (overall session)
+- ✅ Temporal windowing (SessionConfig with W=50, configurable stride); temporal QBER per window
 - ✅ 63 physics-informed temporal-QBER features (statistical, burst, spectral, basis-dependent, channel-interaction)
-- ✅ Intercept-resend attack (full and partial)
-- ✅ Photon Number Splitting (PNS) — `pns`, `pns_storage` variants
-- ✅ Beam Splitting — `beam_splitting`, `beam_splitting_fixed` variants
-- ✅ Time-Shift — `time_shift`, `time_shift_intercept` variants
-- ✅ Trojan Horse — `trojan_horse`, `trojan_horse_active` variants
-- ✅ Quantum Cloning — `quantum_cloning`, `quantum_cloning_measure` variants
-- ✅ Fake State — `fake_state` with multiple subtypes
-- ✅ Multi-class BB84 simulation dataset generation — `scripts/generate_bb84_dataset.py`
-- ✅ ML training/evaluation on BB84 simulation data — `scripts/run_bb84_pipeline.py`
-- ✅ Session-level multiprocessing with checkpoint/resume
-- ✅ Per-session attack & channel parameter randomization (anti-shortcut-learning)
-- ✅ Basis-specific sifted bits tracking
-- ✅ Per-session loss sequence tracking
-- ✅ Threshold/CUSUM/EWMA/Page-Hinkley baselines on temporal QBER
+- ✅ 5 **monitoring features**, kept separate from the 63 (`temporal_qber.temporal.MONITORING_FEATURES`): `double_click_rate`, `empty_gate_click_rate`, `decoy_gain_ratio`, `vacuum_yield`, `single_photon_fraction` (vacuum + weak decoy bound, Ma et al. 2005). The pipeline uses the 63 by default and adds these with `--monitor-features`.
+- ✅ Attack models (as used by `scripts/generate_bb84_dataset.py`):
+  - Intercept-resend — full and partial; Eve's Z-basis bias `p_z`
+  - PNS (`pns_storage`, strategy `block`, Brassard et al. 2000) — Eve keeps one photon of every multi-photon pulse and blocks a fraction of single-photon pulses
+  - Beam splitting — Eve taps each photon with probability R
+  - Time-shift (`time_shift_intercept`) — intercept-resend timed into the detectors' efficiency mismatch, so part of the errors become missing clicks; `time_shift` = pure time shift (outcome-dependent loss)
+  - Trojan horse — Bob-side large-pulse attack: reads Bob's basis from back-reflected probe light and measures in it (no error); leaked probe light makes spurious clicks
+  - Quantum cloning — universal / phase-covariant / state-dependent / asymmetric cloners
+  - Fake state — `phase_remapped`, `detector_mismatch` (faked states: Bob clicks almost only in Eve's basis), `blinding` (clicks only in Eve's basis, no dark counts); `wavelength` / `intensity` / `time_bin` / `combined` are legacy and not sampled
+- ✅ Multi-class BB84 simulation dataset generation — `scripts/generate_bb84_dataset.py` (per-session parameter randomization with minimum attack strengths; multiprocessing; checkpoint/resume)
+- ✅ ML training/evaluation on BB84 simulation data — `scripts/run_bb84_pipeline.py` (5-fold CV + held-out test)
+- ✅ Threshold/CUSUM/EWMA/Page-Hinkley baselines on temporal QBER (the pipeline currently runs only the fixed-threshold and logistic-regression baselines; the sequential ones need per-session QBER sequences, which the dataset does not store)
 - ✅ SHAP explanations and feature-group ablation on BB84 data
 
-**⚠️ Known BB84 Simulator Bugs** (identified in dataset analysis):
-- Bob treats zero-norm states as detections — beam_splitting QBER shows ~0.83% but code adds no errors
-- fake_state has QBER of exactly 50% — detector-mismatch attack shouldn't make bits fully random
-- quantum_cloning gives 14.8% QBER, not 16.7% (1/6) as expected
-- `key_gen_rate` is 0 for normal class — should be highest
+**Fixed simulator bugs (2026-11-21 to 2026-11-23):** 5 attack classes ran `attack_type="none"`; `Bob.measure_batch` counted lost photons as bit-0 clicks; channel loss ignored on ideal channels; beam splitting / PNS skipped vacuum-drawn pulses; generator hung forever when sessions failed and dropped checkpointed sessions on resume. Earlier conclusions that 6 of 8 attacks are indistinguishable (accuracy ceiling ~62.5%) were artefacts of these bugs.
 
-**Accuracy Ceiling**: `normal`, `photon_number_splitting`, and `trojan_horse` all produce QBER ≈ 0 (indistinguishable); `intercept_resend` and `time_shift` both produce QBER ≈ 0.25 (indistinguishable). Model accuracy cannot exceed ~62.5% without simulator fixes.
+**Still open:** `key_gen_rate` is 0 whenever QBER > 11%, so it is constant within the time-shift and quantum-cloning classes (fails `test_no_constant_features_within_class`); `permutation_entropy` is constant overall.
 
 **Do not combine QAD results with BB84 results. They are different tasks, datasets, and threat models.**
 

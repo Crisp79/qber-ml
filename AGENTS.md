@@ -76,7 +76,7 @@ uv run python -m temporal_qber.predict
 
 ### Running Tests
 ```bash
-# All tests (95 tests, ~47s)
+# All tests (129 tests, ~25s; test_no_constant_features_within_class fails until the key_gen_rate question is decided)
 uv run pytest
 
 # Specific test modules
@@ -129,11 +129,11 @@ uv run python scripts/generate_report.py --output ./my_report.pdf
 |--------|-----------|------------|
 | Code | `dataset.py`, `train.py`, `evaluate.py`, `explain.py` | `simulator/`, `temporal/` |
 | Data | `data/qad/` (external CSV) | Simulated on-the-fly |
-| Features | 45 circuit/statistical | 63 temporal-QBER (paper) |
+| Features | 45 circuit/statistical | 63 temporal-QBER (paper) + 5 optional monitoring (`--monitor-features`) |
 | Classes | 8 quantum-circuit attacks | 8 BB84 attacks (1 normal + 7 eavesdropping) |
 | Scripts | `run_pipeline.py`, `test_pipeline.py` | `simulate_bb84.py`, `extract_temporal_features.py` |
 | Notebook | `qad_experiments.ipynb` | None yet |
-| Results | `results/evaluation_results.json` | None yet |
+| Results | `results/evaluation_results.json` | `results/bb84_stage2_63/`, `results/bb84_stage2_monitors/` |
 
 **Never:**
 - Mix QAD and BB84 metrics in the same table

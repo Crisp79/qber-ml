@@ -132,7 +132,8 @@ The current `data/bb84_run2/` dataset was generated with fixed parameters on an 
   - [ ] Rerun training with multiple seeds and confidence intervals
   - [ ] Add unseen-parameter evaluation using held-out parameter ranges
   - [ ] Fix ablation: add keep-only-one-group runs (leave-one-group-out masked by redundant features)
-  - [ ] Add cross-validation: `cv_*` fields are currently null
+  - [x] **DONE (2026-11-23)**: Cross-validation: `cv_*` fields populated (5-fold CV on the training split); RF / XGBoost / SVM evaluated on the full dataset with the paper's 63 features (XGBoost 88.1% test, CV 88.4%) and with 5 monitoring features (97.0%, CV 96.6%) — `results/bb84_stage2_63/`, `results/bb84_stage2_monitors/`
+  - [ ] CUSUM / EWMA / Page-Hinkley are not run by the pipeline (no per-session QBER sequences in the dataset); now reported as null instead of 0% accuracy
 
 - [ ] **PLANNED: Phase 5 — Update report**
   - [ ] Update BB84 results section with verified results

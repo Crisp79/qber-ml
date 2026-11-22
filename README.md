@@ -65,13 +65,26 @@ This repository contains two research tracks:
 | Basis-specific sifted bits tracking | ✅ |
 | Per-session loss sequence tracking | ✅ |
 
-**Verified Results (BB84, 24,000 sessions, 8 classes):**
-| Model | Test Accuracy | Macro-F1 | ROC-AUC (OvR) | Binary FNR |
-|-------|--------------|----------|---------------|------------|
-| Random Forest | 62.17% | 0.6214 | 0.9273 | 0.0950 |
-| XGBoost | 62.46% | 0.6244 | 0.9272 | 0.0876 |
+**Verified Results (BB84, 24,000 sessions, 8 classes, 2026-11-23):** 80/20 stratified split (seed 42), 5-fold CV on the 19,200 training sessions, held-out test set of 4,800 sessions. Decoy-state source, per-session randomized channel/detector/attack parameters. Outputs: `results/bb84_stage2_63/` and `results/bb84_stage2_monitors/`.
 
-**Key Finding:** Model accuracy (~62%) is limited by fundamental class overlap, not model capacity. The dataset analysis shows `normal`, `photon_number_splitting`, and `trojan_horse` all produce QBER ≈ 0 (indistinguishable), while `intercept_resend` and `time_shift` both produce QBER ≈ 0.25 (indistinguishable). See `data/bb84_run2/` analysis notes for details.
+| Model | Features | Test Accuracy | Test Macro-F1 | CV Accuracy | ROC-AUC (OvR) | Binary FNR | Binary FPR |
+|-------|----------|--------------|---------------|-------------|---------------|------------|------------|
+| Random Forest | paper's 63 | 85.46% | 0.8550 | 85.05% ± 0.56 | 0.9864 | 0.0219 | 0.0983 |
+| XGBoost | paper's 63 | 88.10% | 0.8810 | 88.38% ± 0.29 | 0.9903 | 0.0138 | 0.0717 |
+| SVM-RBF | paper's 63 | 85.96% | 0.8589 | 85.94% ± 0.25 | 0.9882 | 0.0193 | 0.0483 |
+| Random Forest | 63 + 5 monitors | 94.83% | 0.9484 | 94.44% ± 0.24 | 0.9975 | 0.0098 | 0.0633 |
+| XGBoost | 63 + 5 monitors | **97.04%** | **0.9705** | 96.61% ± 0.06 | 0.9986 | 0.0033 | 0.0217 |
+| SVM-RBF | 63 + 5 monitors | 95.13% | 0.9515 | 94.40% ± 0.18 | 0.9975 | 0.0088 | 0.0050 |
+
+Binary FNR = attack sessions predicted `normal` / all attack sessions; FPR = normal sessions predicted as an attack / all normal sessions. For reference, the paper reports 75.7% (RF), 88.0% (XGBoost) and 87.3% (SVM) on its own simulation with its 63 features; our 63-feature XGBoost result matches, but the simulations are not the same.
+
+Per-class F1, XGBoost with monitors: normal 0.978, intercept-resend 0.943, PNS 0.996, beam splitting 0.983, time shift 0.952, trojan horse 0.995, quantum cloning 0.926, fake state 0.992. With the paper's 63 features the weakest classes are PNS (0.748) and beam splitting (0.811), which differ only in photon-loss statistics; the decoy-state monitors separate them.
+
+**Key findings:**
+- The 5 monitoring features (`double_click_rate`, `empty_gate_click_rate`, `decoy_gain_ratio`, `vacuum_yield`, `single_photon_fraction`) are standard QKD monitoring statistics, not part of the paper's feature set; results are reported with and without them.
+- Trojan horse is identified almost entirely by one monitor (`vacuum_yield`, single-feature AUC ≈ 0.99 — probe light clicking in vacuum pulses).
+- Attack-parameter ranges are modelling choices (the paper does not give its attack models) with minimum strengths; weaker attacks hide in normal noise and are to be evaluated separately.
+- Earlier results (~62% accuracy, "6 of 8 attacks indistinguishable") were artefacts of simulator bugs fixed on 2026-11-21 to 2026-11-23 — see `NEWCHANGES.md`.
 
 ---
 
@@ -107,35 +120,31 @@ uv run python -m temporal_qber.predict
 
 ### BB84 Track Commands
 ```bash
-# Generate full BB84 dataset (24,000 sessions, 3000/class, 100k transmissions each)
-uv run python scripts/generate_bb84_dataset.py \
+# Generate full BB84 dataset (24,000 sessions, 3000/class, 100k pulses each; ~50 min on 16 cores)
+# OMP_NUM_THREADS=1 stops numerical libraries from oversubscribing the worker processes
+env OMP_NUM_THREADS=1 uv run python scripts/generate_bb84_dataset.py \
   --n-sessions-per-class 3000 \
   --n-transmissions 100000 \
-  --window-size 50 \
-  --stride 50 \
-  --min-sifted-bits 30 \
-  --workers 4 \
-  --output-dir data/bb84 \
-  --log-level INFO
+  --workers 16 \
+  --output-dir data/bb84
 
-# Quick test generation (10 sessions/class, 5k transmissions each)
-uv run python scripts/generate_bb84_dataset.py \
-  --n-sessions-per-class 10 \
-  --n-transmissions 5000 \
-  --output-dir data/bb84_test \
-  --workers 1
+# Pilot dataset (400 sessions/class, ~7 min)
+env OMP_NUM_THREADS=1 uv run python scripts/generate_bb84_dataset.py \
+  --n-sessions-per-class 400 --workers 16 --output-dir data/bb84_pilot
 
-# Run BB84 ML pipeline (RF + XGBoost, SHAP + ablation)
+# Train + evaluate RF, XGBoost, SVM with the paper's 63 features (5-fold CV + held-out test)
 uv run python scripts/run_bb84_pipeline.py \
-  --n-samples 24000 \
-  --models random_forest,xgboost \
-  --log-level INFO
+  --data-path data/bb84/bb84_temporal_dataset.csv \
+  --models random_forest,xgboost,svm_rbf --no-shap --no-ablation \
+  --results-dir results/bb84_stage2_63 --models-dir models/bb84_stage2_63
 
-# Run BB84 pipeline without SHAP/ablation (faster)
+# Same, with the 5 detector/decoy-state monitoring features added
 uv run python scripts/run_bb84_pipeline.py \
-  --n-samples 24000 \
-  --models random_forest,xgboost \
-  --no-shap --no-ablation
+  --data-path data/bb84/bb84_temporal_dataset.csv \
+  --models random_forest,xgboost,svm_rbf --no-shap --no-ablation --monitor-features \
+  --results-dir results/bb84_stage2_monitors --models-dir models/bb84_stage2_monitors
+
+# Drop --no-shap / --no-ablation for SHAP plots and feature-group ablation (slower)
 
 # Single BB84 simulation session
 uv run python scripts/simulate_bb84.py --n-transmissions 100000 --attack-type intercept_resend
@@ -230,7 +239,7 @@ QBER-ML/
 │   ├── experiment.py             # Experiment tracking
 │   ├── temporal/                 # Temporal QBER feature extraction
 │   └── simulator/                # BB84 simulator
-└── tests/                        # 108 tests (invariants, BB84, channels, logging, leakage)
+└── tests/                        # 129 tests (invariants, BB84, channels, detector side channels, logging, leakage)
 ```
 
 ---
@@ -252,13 +261,13 @@ QBER-ML/
 
 2. **Attack-Specific Feature Leakage**: QAD features include simulator parameters that directly reveal attack type/intensity. Models achieve >95% accuracy by reading these. No experiment yet excludes them.
 
-3. **BB84 Simulator Bugs** (identified in dataset analysis):
-   - Bob treats zero-norm states as detections, causing beam_splitting QBER ~0.83% (should be ~0%)
-   - fake_state has QBER of exactly 50% (detector-mismatch attack shouldn't make bits fully random)
-   - quantum_cloning gives 14.8% QBER, not the expected 16.7% (1/6)
-   - `key_gen_rate` is 0 for the normal class (should be highest)
+3. **BB84 simulator bugs — fixed 2026-11-21 to 2026-11-23** (details in `NEWCHANGES.md`): five attack classes ran no attack; lost photons were counted as bit-0 clicks; channel loss was ignored on ideal channels; beam splitting / PNS skipped most pulses; several attack models had no observable effect. The former "~62.5% accuracy ceiling" was an artefact of these bugs.
 
-4. **BB84 Accuracy Ceiling** (~62.5%): `normal`, `photon_number_splitting`, and `trojan_horse` all produce QBER ≈ 0 (indistinguishable); `intercept_resend` and `time_shift` both produce QBER ≈ 0.25 (indistinguishable). Model accuracy cannot exceed ~62.5% without simulator fixes.
+4. **BB84 open issues:**
+   - `key_gen_rate` is 0 whenever QBER > 11%, so it is constant within the time-shift and quantum-cloning classes (`test_no_constant_features_within_class` fails on purpose until this is decided); `permutation_entropy` is constant overall.
+   - CUSUM / EWMA / Page-Hinkley baselines are not run by the pipeline (the dataset does not store per-session QBER sequences); they are reported as `null`.
+   - Attack-parameter ranges are modelling choices; a weak-attack evaluation set (below the minimum strengths) is still to be built.
+   - Results are from one split and seed; repeated-seed evaluation and SHAP / ablation on the new dataset are still to do.
 
 5. **Report PDF Build**: `generate_report.py` hardcodes MiKTeX path (`C:\Program Files\MiKTeX\miktex\bin\x64\pdflatex.exe`). Adjust for your system.
 

@@ -63,7 +63,8 @@ The current `data/bb84_run2/` dataset was generated with fixed parameters on an 
 - [x] **DONE**: Run leakage tests against regenerated dataset — 14/15 pass; fails `test_no_constant_features_within_class` (`key_gen_rate` constant 0 for `time_shift`, see Phase 1 item)
 - [ ] Run full BB84 pipeline with multiple seeds and unseen-parameter splits
 - [ ] Run feature-group ablation on BB84 data (add keep-only-one-group runs)
-- [ ] Add cross-validation (`cv_*` fields are currently null)
+- [x] **DONE (2026-11-23)**: Cross-validation fields populated (the pipeline read them from the test evaluation instead of the training results); SVM now runs (`svm` → `svm_rbf`). Full-dataset evaluation: XGBoost 88.1% (63 features) / 97.0% (with monitors), see README
+- [ ] Feature-group ablation and SHAP on the new dataset (include the monitoring group)
 
 ### Phase 5: Detection latency & novelty detection
 - [ ] Add detection latency analysis (how many windows to detect attack?)

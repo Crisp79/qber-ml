@@ -236,11 +236,11 @@ def evaluate_baselines(X_test: np.ndarray, y_test: np.ndarray,
     # ============================================================
     if qber_sequences is None:
         logger.warning("No per-session QBER sequences provided - sequential baselines not applicable")
-        seq_results = {
-            'cusum': {'accuracy': 0.0, 'fnr': 1.0, 'fpr': 0.0, 'note': 'Requires QBER sequences'},
-            'ewma': {'accuracy': 0.0, 'fnr': 1.0, 'fpr': 0.0, 'note': 'Requires QBER sequences'},
-            'page_hinkley': {'accuracy': 0.0, 'fnr': 1.0, 'fpr': 0.0, 'note': 'Requires QBER sequences'},
-        }
+        # Not run: report missing metrics as None (null), not as 0% accuracy / 100% FNR,
+        # which read like a detector that ran and failed.
+        not_run = {'accuracy': None, 'fnr': None, 'fpr': None,
+                   'note': 'Not run: requires per-session QBER sequences'}
+        seq_results = {name: dict(not_run) for name in ('cusum', 'ewma', 'page_hinkley')}
     else:
         # CUSUM detector
         cusum_preds = np.array([

@@ -1,0 +1,277 @@
+{
+  "config": {
+    "experiment_id": "bb84_stage2_monitors",
+    "timestamp": "2026-11-23T02:49:04.741510",
+    "git_commit": "967bce0c",
+    "dataset_name": "QAD",
+    "dataset_variant": "balanced",
+    "n_samples": null,
+    "n_features": 68,
+    "class_distribution": {
+      "normal": 3000,
+      "intercept_resend": 3000,
+      "photon_number_splitting": 3000,
+      "beam_splitting": 3000,
+      "time_shift": 3000,
+      "trojan_horse": 3000,
+      "quantum_cloning": 3000,
+      "fake_state": 3000
+    },
+    "train_test_split": {
+      "test_size": 0.2,
+      "stratified": true
+    },
+    "cv_config": {
+      "folds": 5,
+      "shuffle": true
+    },
+    "random_seeds": {
+      "data_split": 42,
+      "models": 42,
+      "cv": 42
+    },
+    "model_hyperparameters": {
+      "test_size": 0.2,
+      "cv_folds": 5,
+      "random_state": 42,
+      "n_jobs": -1,
+      "rf_n_estimators": 200,
+      "rf_max_depth": 20,
+      "xgb_n_estimators": 200,
+      "xgb_max_depth": 10,
+      "xgb_learning_rate": 0.1,
+      "svm_C": 1.0,
+      "svm_gamma": "scale",
+      "show_progress": true,
+      "log_level": "INFO"
+    },
+    "models": [
+      "random_forest",
+      "xgboost",
+      "svm_rbf"
+    ]
+  },
+  "models": {
+    "random_forest": {
+      "model_name": "random_forest",
+      "train_time": 0.8796710968017578,
+      "eval_time": 0.13584470748901367,
+      "test_accuracy": 0.9483333333333334,
+      "cv_results": {
+        "cv_scores": [
+          0.9484375,
+          0.9424479166666667,
+          0.9453125,
+          0.94140625,
+          0.9442708333333333
+        ],
+        "cv_f1_scores": [
+          0.9484499347385269,
+          0.9425059946616154,
+          0.9455690104309642,
+          0.9415228482384155,
+          0.9445420587898672
+        ]
+      },
+      "fold_metrics": [
+        {
+          "fold": 1,
+          "accuracy": 0.9484375,
+          "macro_f1": 0.9484499347385269,
+          "train_time": 0.7411682605743408,
+          "eval_time": 0.06115078926086426
+        },
+        {
+          "fold": 2,
+          "accuracy": 0.9424479166666667,
+          "macro_f1": 0.9425059946616154,
+          "train_time": 0.7096664905548096,
+          "eval_time": 0.05131101608276367
+        },
+        {
+          "fold": 3,
+          "accuracy": 0.9453125,
+          "macro_f1": 0.9455690104309642,
+          "train_time": 0.746833086013794,
+          "eval_time": 0.062165260314941406
+        },
+        {
+          "fold": 4,
+          "accuracy": 0.94140625,
+          "macro_f1": 0.9415228482384155,
+          "train_time": 0.7077968120574951,
+          "eval_time": 0.038561105728149414
+        },
+        {
+          "fold": 5,
+          "accuracy": 0.9442708333333333,
+          "macro_f1": 0.9445420587898672,
+          "train_time": 0.7216112613677979,
+          "eval_time": 0.038399696350097656
+        }
+      ],
+      "aggregate_metrics": {
+        "accuracy": 0.944375,
+        "macro_f1": 0.9445179693718778
+      },
+      "model_path": "models/bb84_stage2_monitors/random_forest.joblib",
+      "plots": [
+        "results/bb84_stage2_monitors/random_forest_confusion_matrix.png",
+        "results/bb84_stage2_monitors/random_forest_per_class_f1.png"
+      ],
+      "shap_results": null,
+      "ablation_results": null,
+      "status": "completed",
+      "error": null
+    },
+    "xgboost": {
+      "model_name": "xgboost",
+      "train_time": 4.239848852157593,
+      "eval_time": 0.03409576416015625,
+      "test_accuracy": 0.9704166666666667,
+      "cv_results": {
+        "cv_scores": [
+          0.9666666666666667,
+          0.9669270833333333,
+          0.9661458333333334,
+          0.9653645833333333,
+          0.965625
+        ],
+        "cv_f1_scores": [
+          0.9667297421616947,
+          0.9669603920885899,
+          0.9663010820019313,
+          0.96539957819414,
+          0.965732864454
+        ]
+      },
+      "fold_metrics": [
+        {
+          "fold": 1,
+          "accuracy": 0.9666666666666667,
+          "macro_f1": 0.9667297421616947,
+          "train_time": 3.5997314453125,
+          "eval_time": 0.008594989776611328
+        },
+        {
+          "fold": 2,
+          "accuracy": 0.9669270833333333,
+          "macro_f1": 0.9669603920885899,
+          "train_time": 4.616634845733643,
+          "eval_time": 0.022716760635375977
+        },
+        {
+          "fold": 3,
+          "accuracy": 0.9661458333333334,
+          "macro_f1": 0.9663010820019313,
+          "train_time": 3.251202344894409,
+          "eval_time": 0.008597850799560547
+        },
+        {
+          "fold": 4,
+          "accuracy": 0.9653645833333333,
+          "macro_f1": 0.96539957819414,
+          "train_time": 3.2504775524139404,
+          "eval_time": 0.008310794830322266
+        },
+        {
+          "fold": 5,
+          "accuracy": 0.965625,
+          "macro_f1": 0.965732864454,
+          "train_time": 3.232140064239502,
+          "eval_time": 0.00866556167602539
+        }
+      ],
+      "aggregate_metrics": {
+        "accuracy": 0.9661458333333334,
+        "macro_f1": 0.9662247317800713
+      },
+      "model_path": "models/bb84_stage2_monitors/xgboost.joblib",
+      "plots": [
+        "results/bb84_stage2_monitors/xgboost_confusion_matrix.png",
+        "results/bb84_stage2_monitors/xgboost_per_class_f1.png"
+      ],
+      "shap_results": null,
+      "ablation_results": null,
+      "status": "completed",
+      "error": null
+    },
+    "svm_rbf": {
+      "model_name": "svm_rbf",
+      "train_time": 8.45629358291626,
+      "eval_time": 2.0603272914886475,
+      "test_accuracy": 0.95125,
+      "cv_results": {
+        "cv_scores": [
+          0.9434895833333333,
+          0.9416666666666667,
+          0.9450520833333333,
+          0.9427083333333334,
+          0.946875
+        ],
+        "cv_f1_scores": [
+          0.9437182878296667,
+          0.9417279707274087,
+          0.945188805652692,
+          0.9429731577474312,
+          0.9471208494022973
+        ]
+      },
+      "fold_metrics": [
+        {
+          "fold": 1,
+          "accuracy": 0.9434895833333333,
+          "macro_f1": 0.9437182878296667,
+          "train_time": 5.75802755355835,
+          "eval_time": 0.7254612445831299
+        },
+        {
+          "fold": 2,
+          "accuracy": 0.9416666666666667,
+          "macro_f1": 0.9417279707274087,
+          "train_time": 5.675443172454834,
+          "eval_time": 0.7116563320159912
+        },
+        {
+          "fold": 3,
+          "accuracy": 0.9450520833333333,
+          "macro_f1": 0.945188805652692,
+          "train_time": 5.758455276489258,
+          "eval_time": 0.7236318588256836
+        },
+        {
+          "fold": 4,
+          "accuracy": 0.9427083333333334,
+          "macro_f1": 0.9429731577474312,
+          "train_time": 5.664132595062256,
+          "eval_time": 0.7207515239715576
+        },
+        {
+          "fold": 5,
+          "accuracy": 0.946875,
+          "macro_f1": 0.9471208494022973,
+          "train_time": 5.786910772323608,
+          "eval_time": 0.7335689067840576
+        }
+      ],
+      "aggregate_metrics": {
+        "accuracy": 0.9439583333333333,
+        "macro_f1": 0.9441458142718993
+      },
+      "model_path": "models/bb84_stage2_monitors/svm_rbf.joblib",
+      "plots": [
+        "results/bb84_stage2_monitors/svm_rbf_confusion_matrix.png",
+        "results/bb84_stage2_monitors/svm_rbf_per_class_f1.png"
+      ],
+      "shap_results": null,
+      "ablation_results": null,
+      "status": "completed",
+      "error": null
+    }
+  },
+  "baselines": {},
+  "total_duration": 0.0,
+  "status": "completed",
+  "error": null,
+  "completed_at": null
+}

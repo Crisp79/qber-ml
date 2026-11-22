@@ -260,7 +260,60 @@ Leakage check (68 features): no NaN monitors; best single-feature one-vs-rest AU
 ### 36. Docs
 - **`TODO.md`:** Alice single-photon-source item done; open items for the weak-attack evaluation set and for stating the per-attack signatures in the report.
 
+Entries 25–36 were committed by the user as `967bce0` ("fixes") and pushed to `origin/test`.
+
+---
+
+## 2026-11-23 — Full stage-2 dataset and model evaluation
+
+### 37. Full BB84 dataset regenerated with stages 1 + 2 (not committed; `data/` is git-ignored)
+- `data/bb84/` — 24,000 sessions × 80 columns (63 features + 5 monitors + 12 metadata), 3,000/class, 100k pulses (decoy-state source), 16 workers, 49 min, 0 failures, no nulls or duplicates; mean 11,256 sifted (signal-pulse) bits per session. Previous dataset (pre stage 1) moved to `data/bb84_pre_stage1/`.
+- Per-class means match the stage-2 pilot: e.g. single-photon fraction PNS 0.584 vs beam splitting 0.666 vs normal 0.703; vacuum yield trojan horse 0.122 vs 0.025 elsewhere (0.017 fake state, from blinding).
+- Leakage tests: 15 passed, 1 failed — the known `key_gen_rate` constant within `time_shift`.
+
+### 38. Pipeline: cross-validation results were always empty
+- **File:** `scripts/run_bb84_pipeline.py` — CV runs inside `train_all_models` and is returned as `cv_accuracy_mean` / `cv_accuracy_std` / `cv_f1_macro_mean` / `cv_f1_macro_std` / `cv_scores`, but the pipeline read `cv_accuracy` / `cv_macro_f1` / `cv_std` from the *test-set evaluation*, which never has them. It now reads them from the training results, for both the experiment tracker and `evaluation_results.json` (which also gains `cv_macro_f1_std` and `cv_scores`).
+- **Verified:** XGBoost on the stage-2 pilot — CV accuracy 0.9375 ± 0.0123 (5 folds 0.92–0.95), held-out test 0.950.
+
+### 39. Pipeline: SVM could not run
+- **File:** `scripts/run_bb84_pipeline.py` — the pipeline's model list used `svm`, but `temporal_qber.train.create_models` only knows `svm_rbf`, so the default `--models random_forest,xgboost,svm` raised "Unknown model: svm". The pipeline now uses `svm_rbf` and accepts `svm` as an alias.
+
+### 40. Docs: ARCHITECTURE.md
+- BB84 section rewritten for the current simulator: decoy-state source, photon-number tracking, two-detector Bob with double clicks and the empty monitoring gate, the detector side-channel hook, the 5 monitoring features, each attack's model, and the fixed simulator bugs. Removed the stale "known bugs" list and the ~62.5% accuracy ceiling (artefacts of those bugs).
+
+### 41. Baselines that were not run were reported as 0% accuracy
+- **File:** `src/temporal_qber/evaluate.py` (`evaluate_baselines`) — without per-session QBER sequences, CUSUM / EWMA / Page-Hinkley are not run, but were recorded as accuracy 0.0, FNR 1.0, which reads like a detector that ran and missed everything. They are now recorded as `null` with the note "Not run: requires per-session QBER sequences".
+
+### 42. Full-dataset evaluation
+- **Command (both feature sets, run one after the other):** `uv run python scripts/run_bb84_pipeline.py --data-path data/bb84/bb84_temporal_dataset.csv --models random_forest,xgboost,svm_rbf --no-shap --no-ablation [--monitor-features] --results-dir results/bb84_stage2_{63,monitors} --models-dir models/bb84_stage2_{63,monitors}`
+- **Setup:** 80/20 stratified split, seed 42; 5-fold CV on the 19,200 training sessions; 4,800 held-out test sessions.
+
+| Model | Features | Test acc | Test macro-F1 | CV acc | ROC-AUC | FNR | FPR |
+|---|---|---|---|---|---|---|---|
+| Random Forest | 63 | 0.8546 | 0.8550 | 0.8505 ± 0.0056 | 0.9864 | 0.0219 | 0.0983 |
+| XGBoost | 63 | 0.8810 | 0.8810 | 0.8838 ± 0.0029 | 0.9903 | 0.0138 | 0.0717 |
+| SVM-RBF | 63 | 0.8596 | 0.8589 | 0.8594 ± 0.0025 | 0.9882 | 0.0193 | 0.0483 |
+| Random Forest | 63 + monitors | 0.9483 | 0.9484 | 0.9444 ± 0.0024 | 0.9975 | 0.0098 | 0.0633 |
+| XGBoost | 63 + monitors | **0.9704** | **0.9705** | 0.9661 ± 0.0006 | 0.9986 | 0.0033 | 0.0217 |
+| SVM-RBF | 63 + monitors | 0.9513 | 0.9515 | 0.9440 ± 0.0018 | 0.9975 | 0.0088 | 0.0050 |
+
+- **Per-class F1, XGBoost:** 63 features → with monitors — normal 0.917 → 0.978, intercept-resend 0.923 → 0.943, PNS 0.748 → 0.996, beam splitting 0.811 → 0.983, time shift 0.901 → 0.952, trojan horse 0.933 → 0.995, quantum cloning 0.903 → 0.926, fake state 0.913 → 0.992.
+- **Baselines:** fixed 11% QBER threshold 0.656 accuracy (binary attack vs normal); logistic regression 0.850 (63) / 0.935 (monitors).
+- **Paper (own simulation, 63 features):** RF 0.757, XGBoost 0.880, SVM 0.873.
+- No tweaks to the models were needed: all five target attacks reach F1 ≥ 0.95 with XGBoost + monitors. The remaining weakest pair is intercept-resend ↔ quantum cloning (overlapping QBER levels).
+- The first run of these evaluations (both feature sets in parallel) gave identical model metrics (checked for all six models; SVM-with-monitors test accuracy is exactly 0.95125 = 4,566/4,800 in both); it was repeated one after the other only so that the saved results include the baseline fix (entry 41). Saved baselines now show `null` for CUSUM / EWMA / Page-Hinkley.
+
+### 44. Commit
+- Entries 37–43 committed on branch `test`, together with `results/bb84_stage2_63/` and `results/bb84_stage2_monitors/` (evaluation JSON, confusion-matrix and per-class-F1 plots, run logs, experiment records; ~1 MB). `results/` is git-ignored, so these were force-added, following the project convention that result JSON and plots are committed. Trained models (`models/`, ~160 MB) and datasets (`data/`) are not committed.
+
+### 43. Docs
+- **`README.md`:** BB84 results table (both feature sets, CV, FNR/FPR), key findings, updated BB84 commands (16 workers, pilot, `--monitor-features`, `svm_rbf`), test count 129, known-issues section rewritten (fixed bugs; open issues: `key_gen_rate`, baselines not run, weak-attack set, single seed).
+- **`CURRENT_FINDINGS.md`:** "Current results (2026-11-23)" summary at the top.
+- **`TODO.md`, `ROADMAP.md`:** cross-validation done, full-dataset evaluation recorded; new open items for ablation/SHAP on the new dataset and the sequential baselines.
+- **`AGENTS.md`:** test count (129, with the known failing test), BB84 features row (63 + optional monitors), BB84 results row.
+
 ### Next
-- Full 24,000-session regeneration with stages 1 + 2.
 - Weak-attack evaluation set (attack strengths below the new floors) for a detection-vs-strength curve.
+- Repeated-seed evaluation; SHAP and feature-group ablation on the new dataset.
+- Decide what to do about `key_gen_rate` (constant 0 when QBER > 11%).
 - Weak-attack evaluation set (attack strengths below the new floors) for a detection-vs-strength curve.

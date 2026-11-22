@@ -1,0 +1,127 @@
+2026-11-23 02:46:10 INFO     ============================================================
+2026-11-23 02:46:10 INFO     BB84 TEMPORAL-QBER ATTACK DETECTION PIPELINE
+2026-11-23 02:46:10 INFO     ============================================================
+2026-11-23 02:46:10 INFO     
+[1/7] Loading BB84 dataset...
+2026-11-23 02:46:10 INFO     
+[2/7] Preparing features...
+2026-11-23 02:46:10 INFO     Features: 63 | Classes: 8
+2026-11-23 02:46:10 INFO     Class distribution: {'normal': 3000, 'intercept_resend': 3000, 'photon_number_splitting': 3000, 'beam_splitting': 3000, 'time_shift': 3000, 'trojan_horse': 3000, 'quantum_cloning': 3000, 'fake_state': 3000}
+2026-11-23 02:46:10 INFO     
+[3/7] Splitting data...
+2026-11-23 02:46:10 INFO     Splitting data (test_size=0.2, stratified=True)...
+2026-11-23 02:46:10 INFO     
+[4/7] Saving feature names...
+2026-11-23 02:46:10 INFO     
+[5/7] Training models...
+2026-11-23 02:46:10 INFO     
+==================================================
+2026-11-23 02:46:10 INFO     Model: random_forest
+2026-11-23 02:46:10 INFO     ==================================================
+2026-11-23 02:46:10 INFO     Training random_forest...
+2026-11-23 02:46:11 INFO       Completed in 0.8s
+2026-11-23 02:46:11 INFO     Cross-validating random_forest (5-fold)...
+2026-11-23 02:46:11 INFO     [random_forest] Fold 1/5 started
+2026-11-23 02:46:11 INFO     [random_forest] Fold 1/5 completed in 0.7s | Acc: 0.8562 | Macro-F1: 0.8565
+2026-11-23 02:46:11 INFO     [random_forest] Fold 2/5 started
+2026-11-23 02:46:12 INFO     [random_forest] Fold 2/5 completed in 0.7s | Acc: 0.8477 | Macro-F1: 0.8480
+2026-11-23 02:46:12 INFO     [random_forest] Fold 3/5 started
+2026-11-23 02:46:13 INFO     [random_forest] Fold 3/5 completed in 0.7s | Acc: 0.8581 | Macro-F1: 0.8584
+2026-11-23 02:46:13 INFO     [random_forest] Fold 4/5 started
+2026-11-23 02:46:14 INFO     [random_forest] Fold 4/5 completed in 0.8s | Acc: 0.8445 | Macro-F1: 0.8453
+2026-11-23 02:46:14 INFO     [random_forest] Fold 5/5 started
+2026-11-23 02:46:14 INFO     [random_forest] Fold 5/5 completed in 0.7s | Acc: 0.8458 | Macro-F1: 0.8463
+2026-11-23 02:46:14 INFO     [random_forest] CV complete: 5 folds, total=3.7s, avg=0.7s/fold
+2026-11-23 02:46:14 INFO       Test Accuracy: 0.8546 (eval time: 0.0s)
+2026-11-23 02:46:14 INFO       CV Accuracy: 0.8505 (+/- 0.0056)
+2026-11-23 02:46:14 INFO       CV Macro-F1: 0.8509 (+/- 0.0054)
+2026-11-23 02:46:14 INFO       Train time: 0.8s
+2026-11-23 02:46:14 INFO     
+==================================================
+2026-11-23 02:46:14 INFO     Model: xgboost
+2026-11-23 02:46:14 INFO     ==================================================
+2026-11-23 02:46:14 INFO     Training xgboost...
+2026-11-23 02:46:20 INFO       Completed in 5.8s
+2026-11-23 02:46:20 INFO     Cross-validating xgboost (5-fold)...
+2026-11-23 02:46:20 INFO     [xgboost] Fold 1/5 started
+2026-11-23 02:46:27 INFO     [xgboost] Fold 1/5 completed in 6.6s | Acc: 0.8833 | Macro-F1: 0.8834
+2026-11-23 02:46:27 INFO     [xgboost] Fold 2/5 started
+2026-11-23 02:46:31 INFO     [xgboost] Fold 2/5 completed in 4.3s | Acc: 0.8865 | Macro-F1: 0.8865
+2026-11-23 02:46:31 INFO     [xgboost] Fold 3/5 started
+2026-11-23 02:46:35 INFO     [xgboost] Fold 3/5 completed in 4.3s | Acc: 0.8820 | Macro-F1: 0.8821
+2026-11-23 02:46:35 INFO     [xgboost] Fold 4/5 started
+2026-11-23 02:46:42 INFO     [xgboost] Fold 4/5 completed in 6.2s | Acc: 0.8794 | Macro-F1: 0.8794
+2026-11-23 02:46:42 INFO     [xgboost] Fold 5/5 started
+2026-11-23 02:46:46 INFO     [xgboost] Fold 5/5 completed in 4.7s | Acc: 0.8875 | Macro-F1: 0.8876
+2026-11-23 02:46:46 INFO     [xgboost] CV complete: 5 folds, total=26.2s, avg=5.2s/fold
+2026-11-23 02:46:46 INFO       Test Accuracy: 0.8810 (eval time: 0.0s)
+2026-11-23 02:46:46 INFO       CV Accuracy: 0.8838 (+/- 0.0029)
+2026-11-23 02:46:46 INFO       CV Macro-F1: 0.8838 (+/- 0.0030)
+2026-11-23 02:46:46 INFO       Train time: 5.8s
+2026-11-23 02:46:46 INFO     
+==================================================
+2026-11-23 02:46:46 INFO     Model: svm_rbf
+2026-11-23 02:46:46 INFO     ==================================================
+2026-11-23 02:46:46 INFO     Training svm_rbf...
+2026-11-23 02:46:59 INFO       Completed in 12.5s
+2026-11-23 02:47:01 INFO     Cross-validating svm_rbf (5-fold)...
+2026-11-23 02:47:01 INFO     [svm_rbf] Fold 1/5 started
+2026-11-23 02:47:10 INFO     [svm_rbf] Fold 1/5 completed in 9.8s | Acc: 0.8628 | Macro-F1: 0.8623
+2026-11-23 02:47:10 INFO     [svm_rbf] Fold 2/5 started
+2026-11-23 02:47:20 INFO     [svm_rbf] Fold 2/5 completed in 9.8s | Acc: 0.8612 | Macro-F1: 0.8607
+2026-11-23 02:47:20 INFO     [svm_rbf] Fold 3/5 started
+2026-11-23 02:47:30 INFO     [svm_rbf] Fold 3/5 completed in 9.8s | Acc: 0.8568 | Macro-F1: 0.8562
+2026-11-23 02:47:30 INFO     [svm_rbf] Fold 4/5 started
+2026-11-23 02:47:40 INFO     [svm_rbf] Fold 4/5 completed in 9.6s | Acc: 0.8562 | Macro-F1: 0.8558
+2026-11-23 02:47:40 INFO     [svm_rbf] Fold 5/5 started
+2026-11-23 02:47:49 INFO     [svm_rbf] Fold 5/5 completed in 9.7s | Acc: 0.8602 | Macro-F1: 0.8598
+2026-11-23 02:47:49 INFO     [svm_rbf] CV complete: 5 folds, total=48.7s, avg=9.7s/fold
+2026-11-23 02:47:49 INFO       Test Accuracy: 0.8596 (eval time: 1.7s)
+2026-11-23 02:47:49 INFO       CV Accuracy: 0.8594 (+/- 0.0025)
+2026-11-23 02:47:49 INFO       CV Macro-F1: 0.8590 (+/- 0.0025)
+2026-11-23 02:47:49 INFO       Train time: 12.5s
+2026-11-23 02:47:49 INFO     
+[6/7] Evaluating models...
+2026-11-23 02:47:49 INFO     Experiment started: bb84_stage2_63
+2026-11-23 02:47:49 INFO     Evaluating model on test set...
+2026-11-23 02:47:49 INFO     Evaluation complete in 0.1s
+2026-11-23 02:47:49 INFO       Accuracy: 0.8546 | Macro-F1: 0.8550 | ROC-AUC: 0.9864
+2026-11-23 02:47:49 INFO       Binary FNR: 0.0219 | FPR: 0.0983
+2026-11-23 02:47:50 INFO     Saved confusion matrix to results/bb84_stage2_63/random_forest_confusion_matrix.png
+2026-11-23 02:47:50 INFO     Saved per-class F1 plot to results/bb84_stage2_63/random_forest_per_class_f1.png
+2026-11-23 02:47:50 INFO     Model random_forest results recorded
+2026-11-23 02:47:50 INFO     Evaluating model on test set...
+2026-11-23 02:47:50 INFO     Evaluation complete in 0.0s
+2026-11-23 02:47:50 INFO       Accuracy: 0.8810 | Macro-F1: 0.8810 | ROC-AUC: 0.9903
+2026-11-23 02:47:50 INFO       Binary FNR: 0.0138 | FPR: 0.0717
+2026-11-23 02:47:50 INFO     Saved confusion matrix to results/bb84_stage2_63/xgboost_confusion_matrix.png
+2026-11-23 02:47:50 INFO     Saved per-class F1 plot to results/bb84_stage2_63/xgboost_per_class_f1.png
+2026-11-23 02:47:50 INFO     Model xgboost results recorded
+2026-11-23 02:47:50 INFO     Evaluating model on test set...
+2026-11-23 02:47:53 INFO     Evaluation complete in 3.4s
+2026-11-23 02:47:53 INFO       Accuracy: 0.8596 | Macro-F1: 0.8589 | ROC-AUC: 0.9882
+2026-11-23 02:47:53 INFO       Binary FNR: 0.0193 | FPR: 0.0483
+2026-11-23 02:47:54 INFO     Saved confusion matrix to results/bb84_stage2_63/svm_rbf_confusion_matrix.png
+2026-11-23 02:47:54 INFO     Saved per-class F1 plot to results/bb84_stage2_63/svm_rbf_per_class_f1.png
+2026-11-23 02:47:54 INFO     Model svm_rbf results recorded
+2026-11-23 02:47:54 INFO     
+[7/7] Running baselines and generating summary...
+2026-11-23 02:47:54 INFO     Evaluating baseline detectors (per-session)...
+2026-11-23 02:47:54 INFO     Fixed threshold (11%): Acc=0.6556, FNR=0.3936, FPR=0.0000
+2026-11-23 02:47:54 WARNING  No per-session QBER sequences provided - sequential baselines not applicable
+2026-11-23 02:47:54 INFO     Logistic regression: Acc=0.8496, Macro-F1=0.8495
+2026-11-23 02:47:54 INFO     Saved evaluation results to results/bb84_stage2_63/evaluation_results.json
+2026-11-23 02:47:54 INFO     
+============================================================
+2026-11-23 02:47:54 INFO     PIPELINE COMPLETE in 104.2s
+2026-11-23 02:47:54 INFO     ============================================================
+2026-11-23 02:47:54 INFO     
+================================================================================
+2026-11-23 02:47:54 INFO     EVALUATION SUMMARY
+2026-11-23 02:47:54 INFO     ================================================================================
+2026-11-23 02:47:54 INFO     Model                  Accuracy   Macro-F1 Macro-Prec  Macro-Rec    ROC-AUC Binary-FNR
+2026-11-23 02:47:54 INFO     --------------------------------------------------------------------------------
+2026-11-23 02:47:54 INFO     random_forest            0.8546     0.8550     0.8593     0.8546     0.9864     0.0219
+2026-11-23 02:47:54 INFO     xgboost                  0.8810     0.8810     0.8843     0.8810     0.9903     0.0138
+2026-11-23 02:47:54 INFO     svm_rbf                  0.8596     0.8589     0.8632     0.8596     0.9882     0.0193
+2026-11-23 02:47:54 INFO     ================================================================================

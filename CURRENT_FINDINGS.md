@@ -4,6 +4,16 @@
 **Branch**: feature/bb84-attacks  
 **Commit**: e566b521  
 
+> **Current results (2026-11-23) — supersede everything below.** Full dataset `data/bb84/` (24,000
+> sessions, decoy-state source, redesigned attacks, minimum attack strengths), 80/20 stratified split,
+> 5-fold CV. XGBoost: **88.1% test accuracy (CV 88.4%) with the paper's 63 features**, **97.0% (CV
+> 96.6%) with the 5 monitoring features added**; RF 85.5% / 94.8%, SVM-RBF 86.0% / 95.1%. With
+> monitors every class reaches F1 ≥ 0.93 (PNS 0.996, trojan horse 0.995, fake state 0.992, beam
+> splitting 0.983, normal 0.978, time shift 0.952, intercept-resend 0.943, quantum cloning 0.926);
+> 0.3% of attacks are missed and 2.2% of normal sessions are flagged. Full table in `README.md`;
+> outputs in `results/bb84_stage2_63/` and `results/bb84_stage2_monitors/`; every change that led
+> here is in `NEWCHANGES.md`. The two corrections below explain why the older analysis is invalid.
+
 > **Correction (2026-11-21): the BB84 results below are invalid for 5 of 8 classes.**
 > `ATTACK_PARAM_RANGES` in `scripts/generate_bb84_dataset.py` had no `"attack_type"` for
 > `photon_number_splitting`, `beam_splitting`, `time_shift`, `trojan_horse` and `fake_state`, so
