@@ -226,6 +226,12 @@ DETECTION_EFFICIENCY_RANGE = (0.80, 1.00)
 # Dark count probability range (0-5%)
 DARK_COUNT_PROB_RANGE = (0.0, 0.05)
 
+# Decoy-state source used for every class (vacuum + weak decoy; Ma, Qi, Zhao & Lo 2005).
+# Alice sends weak coherent pulses: signal mu = 0.5 (70% of pulses, the only ones used for
+# the key and the 63 temporal features), weak decoy nu = 0.1 (20%), vacuum (10%). Fixed
+# protocol constants, identical for all classes.
+DECOY_CONFIG = {"intensities": [0.5, 0.1, 0.0], "probabilities": [0.7, 0.2, 0.1]}
+
 # Per-attack parameter ranges (sampled per session)
 ATTACK_PARAM_RANGES = {
     "normal": {
@@ -242,7 +248,7 @@ ATTACK_PARAM_RANGES = {
     # silently falls back to "none" and produces unattacked sessions under an attack label.
     "photon_number_splitting": {
         "attack_type": "pns_storage",
-        "mu_range": (0.1, 0.4),  # Mean photon number for WCP
+        # Photon numbers come from Alice's decoy-state source (DECOY_CONFIG).
         # Standard PNS (Brassard et al. 2000): block single-photon pulses. "pass" has no
         # observable effect at Bob and "intercept_resend" is plain intercept-resend.
         "strategies": ["block"],
@@ -251,8 +257,11 @@ ATTACK_PARAM_RANGES = {
     },
     "beam_splitting": {
         "attack_type": "beam_splitting",
-        "reflection_coeff_range": (0.05, 0.3),  # Eve's tap fraction
-        "mu_range": (0.1, 0.4),
+        # Eve's tap fraction. Floor 0.15: weaker taps hide inside normal channel loss
+        # (0-15%) and were detected <50% of the time; they belong in a separate
+        # weak-attack evaluation set, not the training data.
+        "reflection_coeff_range": (0.15, 0.3),
+        # Photon numbers come from Alice's decoy-state source (DECOY_CONFIG).
     },
     "time_shift": {
         "attack_type": "time_shift_intercept",  # intercept_prob below is only used by this variant
@@ -269,9 +278,10 @@ ATTACK_PARAM_RANGES = {
         "back_reflection_coeff_range": (1e-6, 1e-3),
         "basis_inference_prob_range": (0.7, 0.95),
         "detector_saturation_prob_range": (0.0, 0.02),
-        # Fraction of probe photons reaching Bob's detectors in-gate; with 500-5000 probe
-        # photons this gives a spurious-click probability of ~0.003-0.18 per pulse.
-        "detector_leak_coeff_range": (5e-6, 4e-5),
+        # Spurious-click probability from probe light leaking into Bob's detectors; the
+        # leak coefficient is derived from it and probe_photons. Floor 0.02: below that the
+        # probe clicks hide inside dark counts and were detected ~60% of the time.
+        "probe_click_prob_range": (0.02, 0.18),
     },
     "quantum_cloning": {
         "attack_type": "quantum_cloning",
@@ -286,7 +296,8 @@ ATTACK_PARAM_RANGES = {
         "subtypes": ["phase_remapped", "detector_mismatch", "blinding"],
         "subtype_probs": [0.34, 0.33, 0.33],
         "mismatch_residual_range": (0.0, 0.3),  # detector_mismatch: residual efficiency outside Eve's basis
-        "phase_shift_range": (0.0, np.pi),
+        # Floor 0.6 rad: smaller remapping phases cause almost no errors (detected 3-12%).
+        "phase_shift_range": (0.6, np.pi),
         "det0_efficiency_range": (0.7, 1.0),
         "det1_efficiency_range": (0.7, 1.0),
         "multi_photon_prob_range": (0.0, 0.3),
@@ -328,7 +339,6 @@ def randomize_attack_params(class_name: str, rng: np.random.Generator) -> Dict[s
     
     elif class_name == "photon_number_splitting":
         attack_params = {
-            "mean_photon_number": float(rng.uniform(*ranges["mu_range"])),
             "single_photon_strategy": rng.choice(
                 ranges["strategies"], p=ranges["strategy_probs"]
             ),
@@ -338,7 +348,6 @@ def randomize_attack_params(class_name: str, rng: np.random.Generator) -> Dict[s
     elif class_name == "beam_splitting":
         attack_params = {
             "reflection_coeff": float(rng.uniform(*ranges["reflection_coeff_range"])),
-            "mean_photon_number": float(rng.uniform(*ranges["mu_range"])),
         }
     
     elif class_name == "time_shift":
@@ -361,8 +370,11 @@ def randomize_attack_params(class_name: str, rng: np.random.Generator) -> Dict[s
             "detector_saturation_prob": float(
                 rng.uniform(*ranges["detector_saturation_prob_range"])
             ),
-            "detector_leak_coeff": float(rng.uniform(*ranges["detector_leak_coeff_range"])),
         }
+        probe_click_prob = float(rng.uniform(*ranges["probe_click_prob_range"]))
+        attack_params["detector_leak_coeff"] = float(
+            -np.log1p(-probe_click_prob) / attack_params["probe_photons"]
+        )
     
     elif class_name == "quantum_cloning":
         cloning_type = rng.choice(
@@ -468,7 +480,7 @@ def generate_session_task(args: Tuple) -> Tuple[str, Dict[str, Any], Optional[st
     try:
         # Import here to avoid pickling issues
         from temporal_qber.simulator import run_bb84_simulation
-        from temporal_qber.temporal import extract_temporal_qber_features, WindowConfig
+        from temporal_qber.temporal import extract_temporal_qber_features, extract_monitoring_features, WindowConfig
         from temporal_qber.simulator.session import SessionConfig as TemporalSessionConfig
         
         # Create per-session RNG for parameter randomization
@@ -512,13 +524,18 @@ def generate_session_task(args: Tuple) -> Tuple[str, Dict[str, Any], Optional[st
             'channel_params': channel_params,
             'attack_type': attack_type,
             'attack_params': attack_params,
+            'decoy_config': DECOY_CONFIG,
         }
-        
+
         result = run_bb84_simulation(**bb84_config)
         
-        # Extract temporal features
-        bob_detected_filtered = result.bob_detected[result.matching_bases_mask & result.bob_detected]
-        
+        # Extract temporal features. Bob's detections are filtered exactly like the sifted
+        # key: matching basis, detected and - with the decoy-state source - signal pulses only.
+        key_mask = result.matching_bases_mask & result.bob_detected
+        if result.pulse_intensity is not None:
+            key_mask = key_mask & (result.pulse_intensity == 0)
+        bob_detected_filtered = result.bob_detected[key_mask]
+
         window_config = WindowConfig(
             window_size=window_size,
             stride=stride,
@@ -551,6 +568,11 @@ def generate_session_task(args: Tuple) -> Tuple[str, Dict[str, Any], Optional[st
             afterpulse_prob=0.0,
         )
         
+        # Detector monitoring statistics (separate from the paper's 63 features)
+        features.update(extract_monitoring_features(
+            result.bob_detected, result.bob_double_click, result.bob_empty_gate_click,
+            pulse_intensity=result.pulse_intensity, intensities=result.decoy_intensities))
+
         # Add metadata (class_name/class_idx from function args)
         features.update({
             'class_label': class_name,
@@ -771,7 +793,8 @@ def generate_dataset(
     
     # Generate sessions
     all_sessions = []
-    session_results = {}  # session_key -> features
+    # session_results keeps the sessions loaded from a checkpoint (resetting it here used to
+    # drop them from the final CSV when a run was resumed)
     checkpoint_interval = 100  # Save checkpoint every N sessions
     
     start_time = time.time()
@@ -816,58 +839,58 @@ def generate_dataset(
             pending = {}
             completed = 0
             
-            # Submit initial batch
-            for i, (session_key_str, task_args) in enumerate(all_tasks):
-                if i < max_queue_size:
-                    future = pool.apply_async(generate_session_task, (task_args,))
-                    pending[future] = (session_key_str, task_args[1])  # store class_name too
-                else:
-                    break
-            
+            # Submit the initial batch; next_submit indexes the next task in all_tasks.
+            # (The old index, len(completed_keys) + len(pending), lagged behind after every
+            # failed session and after a resume, resubmitting old tasks - an endless loop
+            # once sessions fail.)
+            next_submit = min(max_queue_size, len(all_tasks))
+            for session_key_str, task_args in all_tasks[:next_submit]:
+                future = pool.apply_async(generate_session_task, (task_args,))
+                pending[future] = (session_key_str, task_args[1])  # store class_name too
+
             # Process completed tasks and submit new ones
-            total_tasks = len(all_tasks)
-            while pending or completed < len(all_tasks):
-                # Wait for at least one task to complete
-                for future in list(pending.keys()):
-                    if future.ready():
-                        session_key_str, class_name = pending.pop(future)
-                        try:
-                            _, features, error = future.get()
-                            if error:
-                                logger.error(f"Session {session_key_str} failed: {error}")
-                                status.add_completion(session_key_str, class_name, 0, success=False)
-                            else:
-                                session_results[session_key_str] = features
-                                completed_keys.add(session_key_str)
-                                status.add_completion(session_key_str, class_name, time.time() - start_time, success=True)
-                        except Exception as e:
-                            logger.error(f"Session {session_key_str} failed with exception: {e}")
-                            status.add_completion(session_key_str, class_name, 0, success=False)
-                        
-                        completed += 1
-                        status.update()
-                        
-                        # Submit next task if available
-                        next_idx = len(completed_keys) + len(pending)
-                        if next_idx < len(all_tasks):
-                            next_key, next_args = all_tasks[next_idx]
-                            new_future = pool.apply_async(generate_session_task, (next_args,))
-                            pending[new_future] = (next_key, next_args[1])
-                        
-                        # Checkpoint periodically
-                        if completed % checkpoint_interval == 0:
-                            elapsed = time.time() - start_time
-                            checkpoint.update({
-                                "completed_sessions": list(completed_keys),
-                                "session_results": session_results,
-                                "next_session_id": session_id + len(completed_keys),
-                                "total_sessions": len(all_tasks) + len(completed_keys),
-                                "elapsed_time": elapsed,
-                                "workers": workers,
-                            })
-                            save_checkpoint(output_path, checkpoint)
-                        
-                        break  # Process one completion at a time
+            while pending:
+                ready = [f for f in pending if f.ready()]
+                if not ready:
+                    time.sleep(0.05)  # wait without busy-spinning a core
+                    continue
+                future = ready[0]
+                session_key_str, class_name = pending.pop(future)
+                try:
+                    _, features, error = future.get()
+                    if error:
+                        logger.error(f"Session {session_key_str} failed: {error}")
+                        status.add_completion(session_key_str, class_name, 0, success=False)
+                    else:
+                        session_results[session_key_str] = features
+                        completed_keys.add(session_key_str)
+                        status.add_completion(session_key_str, class_name, time.time() - start_time, success=True)
+                except Exception as e:
+                    logger.error(f"Session {session_key_str} failed with exception: {e}")
+                    status.add_completion(session_key_str, class_name, 0, success=False)
+
+                completed += 1
+                status.update()
+
+                # Submit next task if available
+                if next_submit < len(all_tasks):
+                    next_key, next_args = all_tasks[next_submit]
+                    next_submit += 1
+                    new_future = pool.apply_async(generate_session_task, (next_args,))
+                    pending[new_future] = (next_key, next_args[1])
+
+                # Checkpoint periodically
+                if completed % checkpoint_interval == 0:
+                    elapsed = time.time() - start_time
+                    checkpoint.update({
+                        "completed_sessions": list(completed_keys),
+                        "session_results": session_results,
+                        "next_session_id": session_id + len(completed_keys),
+                        "total_sessions": len(all_tasks) + len(completed_keys),
+                        "elapsed_time": elapsed,
+                        "workers": workers,
+                    })
+                    save_checkpoint(output_path, checkpoint)
     
     # Finalize status display
     status.finalize()

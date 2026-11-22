@@ -88,7 +88,11 @@ class BeamSplittingAttack(BaseAttack):
         self.p_z = 0.5
     
     def _sample_photon_number(self) -> int:
-        """Sample the photon number of a non-empty pulse (see sample_nonempty_photon_number)."""
+        """Photon number of the pulse: Alice's actual number when the simulation tracks
+        photon numbers (decoy-state mode), otherwise a non-empty pulse sampled here with
+        mean_photon_number (see sample_nonempty_photon_number)."""
+        if self.photon_number is not None:
+            return self.photon_number
         return sample_nonempty_photon_number(self.rng, self.mu)
     
     def _choose_basis(self) -> int:
@@ -161,7 +165,8 @@ class BeamSplittingAttack(BaseAttack):
                     "n_to_eve": 0,
                     "n_to_bob": n_to_bob,
                     "attack_type": "beam_split_bob_only"
-                }
+                },
+                photons_to_bob=n_to_bob,
             )
         
         # Eve got at least one photon
@@ -197,7 +202,8 @@ class BeamSplittingAttack(BaseAttack):
                 "eve_basis": eve_basis,
                 "eve_outcome": eve_outcome,
                 "bob_gets_photon": n_to_bob > 0
-            }
+            },
+            photons_to_bob=n_to_bob,
         )
     
     def get_theoretical_stats(self) -> Dict[str, float]:

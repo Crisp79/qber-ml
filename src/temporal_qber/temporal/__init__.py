@@ -24,8 +24,10 @@ from .qber import (
 
 from .features import (
     extract_temporal_qber_features,
+    extract_monitoring_features,
     TEMPORAL_QBER_FEATURES,
     TEMPORAL_QBER_FEATURE_GROUPS,
+    MONITORING_FEATURES,
 )
 
 from ..simulator.session import SessionConfig, run_session, SessionResult
@@ -43,8 +45,10 @@ __all__ = [
     "detect_significant_changes",
     "calculate_trend_features",
     "extract_temporal_qber_features",
+    "extract_monitoring_features",
     "TEMPORAL_QBER_FEATURES",
     "TEMPORAL_QBER_FEATURE_GROUPS",
+    "MONITORING_FEATURES",
     "SessionConfig",
     "SessionResult",
     "run_session",

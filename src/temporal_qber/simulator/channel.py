@@ -87,7 +87,31 @@ class QuantumChannel(ABC):
         for i in range(n):
             output[i] = self.transmit(states[i])
         return output
-    
+
+    def transmit_batch_photons(
+        self, states: np.ndarray, photon_numbers: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Transmit multi-photon pulses (decoy-state mode).
+
+        Noise acts on the polarisation state shared by all photons of a pulse; loss acts
+        on each photon independently, so a pulse of n photons keeps Binomial(n, 1 - loss).
+
+        Returns:
+            (output_states, surviving_photon_numbers); a pulse with no surviving photon
+            has a zero (vacuum) state.
+        """
+        loss = self.config.loss_probability
+        self.config.loss_probability = 0.0  # per-photon loss applied below instead
+        try:
+            output = self.transmit_batch(states)
+        finally:
+            self.config.loss_probability = loss
+        photon_numbers = np.asarray(photon_numbers, dtype=np.int64)
+        surviving = self.rng.binomial(photon_numbers, 1.0 - loss) if loss > 0 else photon_numbers.copy()
+        output[surviving == 0] = 0
+        return output, surviving
+
     def apply_loss(self, state: np.ndarray) -> Tuple[np.ndarray, bool]:
         """
         Apply photon loss to a state.

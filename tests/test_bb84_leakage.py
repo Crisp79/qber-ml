@@ -100,14 +100,13 @@ class TestParameterRandomization:
             p_z_values.append(result['attack_params'].get('p_z', 0.5))
         assert np.std(p_z_values) > 0.01, "IR p_z is constant across sessions"
 
-    def test_pns_mu_varies(self):
-        """Test that PNS mu varies across sessions."""
+    def test_pns_block_prob_varies(self):
+        """Test that the PNS single-photon block probability varies across sessions
+        (photon numbers now come from Alice's decoy-state source, not the attack)."""
         rng = np.random.default_rng(42)
-        mu_values = []
-        for _ in range(50):
-            result = randomize_attack_params("photon_number_splitting", rng)
-            mu_values.append(result['attack_params'].get('mean_photon_number', 0.2))
-        assert np.std(mu_values) > 0.01, "PNS mu is constant across sessions"
+        values = [randomize_attack_params("photon_number_splitting", rng)['attack_params']
+                  ['single_photon_block_prob'] for _ in range(50)]
+        assert np.std(values) > 0.01, "PNS block probability is constant across sessions"
 
     def test_beam_splitting_reflection_varies(self):
         """Test that beam splitting reflection_coeff varies."""
@@ -117,6 +116,18 @@ class TestParameterRandomization:
             result = randomize_attack_params("beam_splitting", rng)
             r_values.append(result['attack_params'].get('reflection_coeff', 0.1))
         assert np.std(r_values) > 0.01, "Beam splitting reflection_coeff is constant"
+
+    def test_minimum_attack_strengths(self):
+        """Attack strengths stay above the floors below which attacks hide in normal noise."""
+        rng = np.random.default_rng(0)
+        for _ in range(200):
+            bs = randomize_attack_params("beam_splitting", rng)["attack_params"]
+            assert bs["reflection_coeff"] >= 0.15
+            th = randomize_attack_params("trojan_horse", rng)["attack_params"]
+            p_click = 1 - np.exp(-th["probe_photons"] * th["detector_leak_coeff"])
+            assert 0.02 - 1e-9 <= p_click <= 0.18 + 1e-9
+            fs = randomize_attack_params("fake_state", rng)["attack_params"]
+            assert fs["phase_shift"] >= 0.6
 
     def test_every_attack_class_runs_a_real_attack(self):
         """Non-normal classes must map to an attack that create_attack() builds.
@@ -315,13 +326,15 @@ class TestFeatureColumnCount:
         return pd.read_csv(csv_path)
 
     def test_feature_count_is_63(self, bb84_df):
-        """Test that there are exactly 63 feature columns (excluding metadata)."""
+        """Test that there are exactly 63 paper feature columns (excluding metadata and
+        the separate detector-monitoring features)."""
+        from temporal_qber.temporal import MONITORING_FEATURES
         metadata_cols = {
             'class_label', 'class_index', 'n_transmissions', 'seed',
             'channel_type', 'attack_type', 'attack_params',
             'sifted_key_length', 'sifting_efficiency', 'overall_qber',
             'elapsed_time', 'session_id'
-        }
+        } | set(MONITORING_FEATURES)
         feature_cols = [c for c in bb84_df.columns if c not in metadata_cols]
         assert len(feature_cols) == 63, \
             f"Expected 63 features, found {len(feature_cols)}: {feature_cols}"

@@ -126,7 +126,7 @@ The current `data/bb84_run2/` dataset was generated with fixed parameters on an 
   - [ ] Validate fast path reproduces reference results (normal ~0% QBER, intercept_resend ~25% QBER)
 
 - [ ] **PLANNED: Phase 4 — Full run (24k sessions)**
-  - [x] **DONE (2026-11-21)**: Generate full 24k-session dataset (without Phase 3 speedups — 45 min on 16 cores) → `data/bb84/`; 14/15 leakage tests pass (`key_gen_rate` constant within `time_shift`)
+  - [x] **DONE (2026-11-22)**: Generate full 24k-session dataset (without Phase 3 speedups — 49 min on 16 cores) → `data/bb84/`, after the simulator fixes and attack redesign; 14/15 leakage tests pass (`key_gen_rate` constant within `time_shift`); quick XGBoost check 84.3% accuracy / macro-F1 0.843
   - [ ] Fix baselines: fixed QBER threshold and CUSUM on per-session windowed QBER sequences (not across sessions)
   - [ ] Add EWMA, Page-Hinkley, logistic regression baselines
   - [ ] Rerun training with multiple seeds and confidence intervals
@@ -149,6 +149,6 @@ The current `data/bb84_run2/` dataset was generated with fixed parameters on an 
 7. **BB84 leakage tests** ✅ DONE — `tests/test_bb84_leakage.py` with 8 tests (7 pass, 4 dataset tests fail until regenerated dataset verified)
 8. **BB84 real baselines** ✅ DONE — Fixed threshold, CUSUM, EWMA, Page-Hinkley, logistic regression in `evaluate.py`
 9. **Fix BB84 simulator bugs** ✅ DONE — Bob zero-norm state detection, fake_state QBER, quantum_cloning QBER fixed
-10. **Regenerate full 24,000-session BB84 dataset** ✅ DONE (2026-11-21) — `data/bb84/`, after fixing 5 classes that ran `attack_type="none"`
+10. **Regenerate full 24,000-session BB84 dataset** ✅ DONE (2026-11-22) — `data/bb84/`, after the attack-type fix, three simulator loss bugs and the attack redesign (see NEWCHANGES.md)
 11. **Rerun BB84 pipeline** — Multiple seeds, unseen-parameter splits, feature-group ablation
 12. **Build report PDF** — verify MiKTeX path and bibliography

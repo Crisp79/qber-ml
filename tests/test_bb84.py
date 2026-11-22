@@ -708,5 +708,40 @@ class TestDetectorSideChannels:
         assert 0.06 < r.qber < 0.11
 
 
+class TestDetectorMonitoring:
+    """Double clicks and the empty monitoring gate."""
+
+    def test_spurious_light_on_a_photon_gives_double_clicks(self):
+        bob = Bob(seed=3, detection_efficiency=1.0, dark_count_prob=0.0)
+        n = 20000
+        z0 = np.tile(BB84_STATES[(Basis.Z, Bit.ZERO)], (n, 1))
+        ms = bob.measure_batch(z0, bases=np.zeros(n, dtype=np.int8), spurious_click_prob=np.ones(n))
+        double = np.array([m.is_double_click for m in ms])
+        # Probe light hits the other (bit-1) detector half of the time
+        assert 0.47 < double.mean() < 0.53
+        # Double clicks get a random bit; single clicks keep the photon's bit 0
+        assert 0.45 < np.mean([m.outcome for m in ms if m.is_double_click]) < 0.55
+        assert all(m.outcome == 0 for m in ms if not m.is_double_click)
+
+    def test_no_double_clicks_without_dark_counts_or_external_light(self):
+        r = run_bb84_simulation(n_transmissions=20000, seed=7, dark_count_prob=0.0, channel_type="depolarizing",
+                                channel_params={"depolarizing_prob": 0.08})
+        assert not r.bob_double_click.any()
+
+    def test_empty_gate_measures_dark_count_rate(self):
+        bob = Bob(seed=4, detection_efficiency=1.0, dark_count_prob=0.3)
+        vac = np.zeros((20000, 2), dtype=np.complex128)
+        assert 0.28 < np.mean([m.empty_gate_click for m in bob.measure_batch(vac)]) < 0.32
+        blinded = bob.measure_batch(vac, dark_scale=np.zeros(20000))
+        assert not any(m.empty_gate_click for m in blinded)
+
+    def test_monitoring_features(self):
+        from temporal_qber.temporal import extract_monitoring_features, MONITORING_FEATURES
+        f = extract_monitoring_features(np.array([1, 1, 1, 1, 0], bool), np.array([1, 0, 0, 0, 0], bool),
+                                        np.array([0, 1, 0, 0, 0], bool))
+        assert set(f) == set(MONITORING_FEATURES)
+        assert f["double_click_rate"] == 0.25 and f["empty_gate_click_rate"] == 0.2
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

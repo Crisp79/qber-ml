@@ -49,6 +49,10 @@ class AttackResult:
     bob_spurious_click_prob: float = field(default=0.0, kw_only=True)
     # Multiplier on Bob's dark-count probability (0 = detectors blinded by bright light).
     bob_dark_scale: float = field(default=1.0, kw_only=True)
+    # Photons sent on to Bob when the simulation tracks photon numbers (decoy-state
+    # mode). None = the pulse's photon number is unchanged. Used by attacks that remove
+    # photons (PNS, beam splitting).
+    photons_to_bob: Optional[int] = field(default=None, kw_only=True)
 
 
 class BaseAttack(ABC):
@@ -60,6 +64,9 @@ class BaseAttack(ABC):
         # Only attacks that physically read Bob's apparatus (trojan horse on Bob's
         # modulator, detector blinding/faked states) may use it.
         self.bob_basis: Optional[int] = None
+        # Photon number of Alice's pulse for the transmission being attacked, when the
+        # simulation tracks photon numbers (decoy-state mode); None = single-photon model.
+        self.photon_number: Optional[int] = None
     
     @abstractmethod
     def attack(self, state: np.ndarray, alice_basis: int, alice_bit: int) -> AttackResult:
@@ -82,6 +89,7 @@ class BaseAttack(ABC):
         alice_bases: np.ndarray,
         alice_bits: np.ndarray,
         bob_bases: Optional[np.ndarray] = None,
+        photon_numbers: Optional[np.ndarray] = None,
     ) -> list[AttackResult]:
         """
         Attack a batch of transmissions.
@@ -91,6 +99,8 @@ class BaseAttack(ABC):
             alice_bases: Alice's basis choices
             alice_bits: Alice's bit values
             bob_bases: Bob's basis choices, exposed per transmission as self.bob_basis
+            photon_numbers: Photon number of each of Alice's pulses, exposed as
+                self.photon_number (decoy-state mode)
 
         Returns:
             List of AttackResult
@@ -99,6 +109,7 @@ class BaseAttack(ABC):
         results = []
         for i in range(n):
             self.bob_basis = None if bob_bases is None else int(bob_bases[i])
+            self.photon_number = None if photon_numbers is None else int(photon_numbers[i])
             result = self.attack(states[i], int(alice_bases[i]), int(alice_bits[i]))
             results.append(result)
         return results

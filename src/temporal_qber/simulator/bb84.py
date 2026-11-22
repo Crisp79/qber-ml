@@ -68,7 +68,18 @@ class BB84Result:
     
     # Timing
     elapsed_time: float
-    
+
+    # Detector monitoring (per transmission): both detectors fired; click in the
+    # no-signal monitoring gate
+    bob_double_click: Optional[np.ndarray] = None
+    bob_empty_gate_click: Optional[np.ndarray] = None
+
+    # Decoy-state source (None in single-photon mode): intensity index of each pulse
+    # (0 = signal), Alice's photon number per pulse, and the intensities themselves
+    pulse_intensity: Optional[np.ndarray] = None
+    photon_numbers: Optional[np.ndarray] = None
+    decoy_intensities: Optional[list] = None
+
     def get_public_info(self) -> dict:
         """
         Get information available to an eavesdropper / attack detector.
@@ -125,9 +136,17 @@ class BB84Protocol:
         channel: Optional[QuantumChannel] = None,
         attack: Optional[str] = None,
         attack_params: Optional[dict] = None,
+        decoy_config: Optional[dict] = None,
     ):
         """
         Initialize BB84 protocol.
+
+        decoy_config: optional decoy-state source, e.g.
+            {"intensities": [0.5, 0.1, 0.0], "probabilities": [0.7, 0.2, 0.1]}.
+            Alice then sends weak coherent pulses: each pulse gets intensity index k with
+            probability probabilities[k] and Poisson(intensities[k]) photons. Index 0 is the
+            signal intensity; only signal pulses form the key. None = one single photon per
+            transmission (the original model).
         
         Args:
             n_transmissions: Number of qubits Alice sends
@@ -160,7 +179,14 @@ class BB84Protocol:
         self.channel = channel or IdealChannel(seed=seed)
         self.attack_type = attack or "none"
         self.attack_params = attack_params or {}
-        
+        self.decoy_config = decoy_config
+        if decoy_config is not None:
+            intensities = np.asarray(decoy_config["intensities"], dtype=np.float64)
+            probabilities = np.asarray(decoy_config["probabilities"], dtype=np.float64)
+            if len(intensities) != len(probabilities) or np.any(intensities < 0) \
+                    or not np.isclose(probabilities.sum(), 1.0):
+                raise ValueError(f"invalid decoy_config: {decoy_config}")
+
         # Initialize Alice and Bob with independent seeds
         if seed is not None:
             # Use a simple but effective seed derivation: hash the seed with different labels
@@ -170,8 +196,10 @@ class BB84Protocol:
             bob_seed = int(hashlib.sha256(f"{seed}_bob".encode()).hexdigest(), 16) % (2**64)
             channel_seed = int(hashlib.sha256(f"{seed}_channel".encode()).hexdigest(), 16) % (2**64)
             attack_seed = int(hashlib.sha256(f"{seed}_attack".encode()).hexdigest(), 16) % (2**64)
+            decoy_seed = int(hashlib.sha256(f"{seed}_decoy".encode()).hexdigest(), 16) % (2**64)
         else:
-            alice_seed = bob_seed = channel_seed = attack_seed = None
+            alice_seed = bob_seed = channel_seed = attack_seed = decoy_seed = None
+        self._decoy_rng = np.random.default_rng(decoy_seed)
         
         self.alice = Alice(seed=alice_seed, p_z=alice_p_z)
         self.bob = Bob(seed=bob_seed, p_z=bob_p_z, detection_efficiency=detection_efficiency, dark_count_prob=dark_count_prob)
@@ -211,10 +239,29 @@ class BB84Protocol:
         # make (so results are unchanged), so that attacks reading Bob's apparatus can use them.
         bob_bases_drawn = self.bob.rng.integers(0, 2, size=self.n_transmissions, dtype=np.int8)
 
+        # Decoy-state source: intensity index and Poisson photon number of every pulse
+        if self.decoy_config is not None:
+            intensities = np.asarray(self.decoy_config["intensities"], dtype=np.float64)
+            pulse_intensity = self._decoy_rng.choice(
+                len(intensities), size=self.n_transmissions, p=self.decoy_config["probabilities"])
+            photon_numbers = self._decoy_rng.poisson(intensities[pulse_intensity])
+        else:
+            pulse_intensity = None
+            photon_numbers = None
+
         # Step 2: Eve's attack on transmitted states
         attack_results = self.attack.attack_batch(alice_states, alice_bases, alice_bits,
-                                                  bob_bases=bob_bases_drawn)
+                                                  bob_bases=bob_bases_drawn,
+                                                  photon_numbers=photon_numbers)
         attacked_states = np.array([r.transmitted_state for r in attack_results], dtype=np.complex128)
+        if photon_numbers is not None:
+            photons_to_bob = np.array(
+                [n if r.photons_to_bob is None else r.photons_to_bob
+                 for n, r in zip(photon_numbers, attack_results)], dtype=np.int64)
+            # An empty pulse gives Eve nothing to measure or forward; a vacuum state carries no photon
+            photons_to_bob[photon_numbers == 0] = 0
+            photons_to_bob[np.linalg.norm(attacked_states, axis=1) == 0] = 0
+            attacked_states[photons_to_bob == 0] = 0
         # Detector side-channel effects (passed to Bob only when some attack result sets them)
         eff_scale = np.array([r.bob_eff_scale for r in attack_results], dtype=np.float64)
         spurious_click_prob = np.array([r.bob_spurious_click_prob for r in attack_results], dtype=np.float64)
@@ -224,8 +271,13 @@ class BB84Protocol:
             progress_callback("eve_attack", 1)
             progress_callback("channel_transmit", 0)
         
-        # Step 2: States pass through quantum channel
-        channel_output_states = self.channel.transmit_batch(attacked_states)
+        # Step 2: States pass through quantum channel (per-photon loss for multi-photon pulses)
+        if photon_numbers is not None:
+            channel_output_states, photons_at_bob = self.channel.transmit_batch_photons(
+                attacked_states, photons_to_bob)
+        else:
+            channel_output_states = self.channel.transmit_batch(attacked_states)
+            photons_at_bob = None
         
         if progress_callback:
             progress_callback("channel_transmit", 1)
@@ -238,6 +290,7 @@ class BB84Protocol:
             eff_scale=eff_scale if np.any(eff_scale != 1.0) else None,
             spurious_click_prob=spurious_click_prob if np.any(spurious_click_prob > 0) else None,
             dark_scale=dark_scale if np.any(dark_scale != 1.0) else None,
+            photon_numbers=photons_at_bob,
         )
         
         if progress_callback:
@@ -251,6 +304,8 @@ class BB84Protocol:
         bob_probs_0 = np.array([m.prob_0 for m in bob_measurements], dtype=np.float64)
         bob_probs_1 = np.array([m.prob_1 for m in bob_measurements], dtype=np.float64)
         bob_is_dark_count = np.array([m.is_dark_count for m in bob_measurements], dtype=bool)
+        bob_double_click = np.array([m.is_double_click for m in bob_measurements], dtype=bool)
+        bob_empty_gate_click = np.array([m.empty_gate_click for m in bob_measurements], dtype=bool)
         
         # Extract Eve's attack data
         eve_intercepted = np.array([r.intercepted for r in attack_results], dtype=bool)
@@ -264,8 +319,10 @@ class BB84Protocol:
         # Step 4: Basis reconciliation (sifting)
         matching_bases_mask = (bob_bases == alice_bases)
         
-        # Only detected events with matching bases
-        valid_mask = matching_bases_mask & bob_detected
+        # Only detected events with matching bases; with a decoy-state source only signal
+        # pulses (intensity index 0) form the key - decoy and vacuum pulses are for monitoring
+        key_pulses = np.ones(self.n_transmissions, dtype=bool) if pulse_intensity is None else (pulse_intensity == 0)
+        valid_mask = matching_bases_mask & bob_detected & key_pulses
         sifted_indices = np.where(valid_mask)[0]
         
         sifted_alice_bits = alice_bits[valid_mask]
@@ -281,12 +338,13 @@ class BB84Protocol:
         sifted_bob_diag = bob_outcomes[sifted_diag_mask]
         
         # Track per-transmission loss for channel-interaction features
-        # loss = 1 if photon lost (not detected), 0 if detected
-        loss_seq = (~bob_detected).astype(np.float64)
-        
+        # loss = 1 if photon lost (not detected), 0 if detected (key pulses only)
+        loss_seq = (~bob_detected[key_pulses]).astype(np.float64)
+
         n_matching_bases = int(np.sum(matching_bases_mask))
         sifted_key_length = len(sifted_alice_bits)
-        sifting_efficiency = sifted_key_length / self.n_transmissions if self.n_transmissions > 0 else 0.0
+        n_key_pulses = int(np.sum(key_pulses))
+        sifting_efficiency = sifted_key_length / n_key_pulses if n_key_pulses > 0 else 0.0
         
         if progress_callback:
             progress_callback("sifting", 1)
@@ -353,8 +411,13 @@ class BB84Protocol:
             agreement=agreement,
             
             elapsed_time=elapsed_time,
+            bob_double_click=bob_double_click,
+            bob_empty_gate_click=bob_empty_gate_click,
+            pulse_intensity=pulse_intensity,
+            photon_numbers=photon_numbers,
+            decoy_intensities=None if self.decoy_config is None else list(self.decoy_config["intensities"]),
         )
-        
+
         return self._result
     
     def get_result(self) -> Optional[BB84Result]:
@@ -374,6 +437,7 @@ def run_bb84_simulation(
     attack_type: str = "none",
     attack_params: Optional[dict] = None,
     progress_callback=None,
+    decoy_config: Optional[dict] = None,
 ) -> BB84Result:
     """
     Convenience function to run a BB84 simulation.
@@ -410,6 +474,7 @@ def run_bb84_simulation(
         channel=channel,
         attack=attack_type,
         attack_params=attack_params,
+        decoy_config=decoy_config,
     )
-    
+
     return protocol.run(progress_callback=progress_callback)

@@ -26,6 +26,7 @@ from temporal_qber.explain import explain_model_shap, feature_group_ablation, sa
 from temporal_qber.logging_config import setup_logging, get_logger, log_experiment_config
 from temporal_qber.progress import create_progress_manager
 from temporal_qber.experiment import ExperimentTracker, ExperimentConfig
+from temporal_qber.temporal import MONITORING_FEATURES
 
 # BB84 class definitions (matching generation)
 BB84_CLASSES = [
@@ -112,9 +113,14 @@ def load_bb84_dataset(csv_path: str, n_samples: int = None, progress=None):
     return df
 
 
-def prepare_features_targets(df: pd.DataFrame, progress=None):
-    """Extract features and targets from BB84 dataframe."""
-    feature_cols = [c for c in df.columns if c not in METADATA_COLS]
+def prepare_features_targets(df: pd.DataFrame, progress=None, use_monitoring: bool = False):
+    """Extract features and targets from BB84 dataframe.
+
+    By default only the paper's 63 temporal-QBER features are used; with
+    use_monitoring=True the detector-monitoring statistics (MONITORING_FEATURES) are added.
+    """
+    excluded = set(METADATA_COLS) | (set() if use_monitoring else set(MONITORING_FEATURES))
+    feature_cols = [c for c in df.columns if c not in excluded]
     X = df[feature_cols].values
     y = df['class_index'].values
     feature_names = feature_cols
@@ -140,6 +146,7 @@ def run_pipeline(
     experiment_name: str = "",
     disable_console_log: bool = False,
     models: list = None,
+    monitor_features: bool = False,
 ):
     """Run the complete ML pipeline on BB84 data."""
     
@@ -180,7 +187,7 @@ def run_pipeline(
         
         # 2. Prepare features and targets
         logger.info("\n[2/7] Preparing features...")
-        X, y, feature_names = prepare_features_targets(df, progress)
+        X, y, feature_names = prepare_features_targets(df, progress, use_monitoring=monitor_features)
         
         class_dist = get_class_distribution(y)
         logger.info(f"Features: {len(feature_names)} | Classes: {len(np.unique(y))}")
@@ -396,7 +403,10 @@ def main():
     parser.add_argument("--no-progress", action="store_true", help="Disable progress bars")
     parser.add_argument("--experiment-name", type=str, default="", help="Experiment name")
     parser.add_argument("--disable-console-log", action="store_true", help="Disable console logging")
-    
+    parser.add_argument("--monitor-features", action="store_true",
+                        help="Add detector-monitoring features (double_click_rate, empty_gate_click_rate) "
+                             "to the paper's 63 temporal-QBER features")
+
     args = parser.parse_args()
     
     models = [m.strip() for m in args.models.split(",")]
@@ -413,6 +423,7 @@ def main():
         experiment_name=args.experiment_name,
         disable_console_log=args.disable_console_log,
         models=models,
+        monitor_features=args.monitor_features,
     )
 
 

@@ -20,6 +20,8 @@ class BobMeasurement:
     prob_1: float       # Probability of measuring 1
     detected: bool      # Whether a detection occurred
     is_dark_count: bool # Whether this detection was a dark count
+    is_double_click: bool = False   # Both detectors fired (measure_batch only)
+    empty_gate_click: bool = False  # Click in the no-signal monitoring gate (measure_batch only)
 
 
 class Bob:
@@ -119,6 +121,7 @@ class Bob:
         eff_scale: Optional[np.ndarray] = None,
         spurious_click_prob: Optional[np.ndarray] = None,
         dark_scale: Optional[np.ndarray] = None,
+        photon_numbers: Optional[np.ndarray] = None,
     ) -> List[BobMeasurement]:
         """
         Measure a batch of quantum states (vectorized).
@@ -129,10 +132,14 @@ class Bob:
             eff_scale: Optional (n, 2) multipliers (0..1) on detection efficiency when the
                 bit-0 / bit-1 detector would fire (detector efficiency mismatch, e.g. time-shift).
             spurious_click_prob: Optional (n,) probability that external light (e.g. trojan-horse
-                probe) makes a random detector click. Alone it gives a random bit; together with
-                a click in the other detector it is a double click, assigned a random bit.
+                probe) makes a random detector click.
             dark_scale: Optional (n,) multiplier on the dark-count probability (0 = blinded).
-            With all three None the random draws and results are identical to the plain model.
+            photon_numbers: Optional (n,) photons arriving per pulse (decoy-state mode). If
+                None every non-vacuum state is a single photon.
+
+        Each slot's photon, dark count and spurious light can fire either of the two
+        detectors; if both fire it is a double click (recorded, random bit). Each slot also
+        has an empty monitoring gate that only dark counts can fire.
 
         Returns:
             List of BobMeasurement
@@ -159,49 +166,64 @@ class Bob:
         prob_0 = np.where(bases == 0, prob_0_z, prob_0_x)
         prob_1 = np.where(bases == 0, prob_1_z, prob_1_x)
         
-        # Dark count check (independent of photon arrival)
+        # Which of Bob's two detectors (bit 0 / bit 1 of the chosen basis) fire in this slot.
+        # Dark count: a click in a random detector, independent of the photon.
         dark_p = self.dark_count_prob if dark_scale is None else self.dark_count_prob * np.asarray(dark_scale)
-        is_dark_count = self.rng.random(n) < dark_p
-        
-        # Photon detection. A zero-norm (vacuum) state means the photon was lost in the
+        is_dark = self.rng.random(n) < dark_p
+        dark_det = self.rng.integers(0, 2, size=n).astype(np.int8)
+
+        # Photon click. A zero-norm (vacuum) state means the photon was lost in the
         # channel or removed by Eve: only a dark count can then produce a click. Without
         # this check a lost photon was "detected" as bit 0 (prob_1 = 0), turning loss into
         # a bit-0 bias and spurious QBER. Mirrors the check in measure().
         has_photon = np.linalg.norm(states, axis=1) > 0
-        detected_photon = has_photon & (self.rng.random(n) < self.detection_efficiency)
-        
-        # Determine outcomes
-        outcomes = np.zeros(n, dtype=np.int8)
-        
-        # Dark count: random outcome
-        dark_mask = is_dark_count
-        outcomes[dark_mask] = self.rng.integers(0, 2, size=int(np.sum(dark_mask)))
-        
-        # Normal photon detection
-        detect_mask = detected_photon & ~is_dark_count
-        outcomes[detect_mask] = (self.rng.random(int(np.sum(detect_mask))) < prob_1[detect_mask]).astype(np.int8)
+        if photon_numbers is None:
+            # Single-photon pulses
+            photon_click = has_photon & (self.rng.random(n) < self.detection_efficiency)
+            photon_det = (self.rng.random(n) < prob_1).astype(np.int8)  # detector the photon reaches
 
-        # Detector efficiency mismatch: the photon click survives with the multiplier of the
-        # detector that fired (outcome-dependent loss).
-        if eff_scale is not None:
-            eff_scale = np.asarray(eff_scale, dtype=np.float64)
-            keep_prob = np.where(outcomes == 0, eff_scale[:, 0], eff_scale[:, 1])
-            lost = detect_mask & (self.rng.random(n) >= keep_prob)
-            detected_photon = detected_photon & ~lost
+            # Detector efficiency mismatch: the photon click survives with the multiplier of
+            # the detector it reaches (outcome-dependent loss).
+            if eff_scale is not None:
+                eff_scale = np.asarray(eff_scale, dtype=np.float64)
+                keep_prob = np.where(photon_det == 0, eff_scale[:, 0], eff_scale[:, 1])
+                photon_click &= self.rng.random(n) < keep_prob
+            photon_fired_0 = photon_click & (photon_det == 0)
+            photon_fired_1 = photon_click & (photon_det == 1)
+        else:
+            # Multi-photon pulses (decoy-state mode): each photon is routed to a detector by
+            # the measurement and detected independently (efficiency x mismatch multiplier);
+            # a threshold detector fires if at least one of its photons is detected.
+            n_ph = np.where(has_photon, np.asarray(photon_numbers, dtype=np.int64), 0)
+            n_to_1 = self.rng.binomial(n_ph, np.clip(prob_1, 0.0, 1.0))
+            n_to_0 = n_ph - n_to_1
+            scale = np.ones((n, 2)) if eff_scale is None else np.asarray(eff_scale, dtype=np.float64)
+            photon_fired_0 = self.rng.binomial(n_to_0, self.detection_efficiency * scale[:, 0]) > 0
+            photon_fired_1 = self.rng.binomial(n_to_1, self.detection_efficiency * scale[:, 1]) > 0
+            photon_click = photon_fired_0 | photon_fired_1
 
-        # No detection event
-        detected = detected_photon | is_dark_count
-
-        # Spurious clicks from external light (random detector).
+        # Spurious clicks from external light (e.g. trojan-horse probe): a random detector.
         if spurious_click_prob is not None:
             spurious = self.rng.random(n) < np.asarray(spurious_click_prob)
             spurious_det = self.rng.integers(0, 2, size=n).astype(np.int8)
-            alone = spurious & ~detected
-            outcomes[alone] = spurious_det[alone]
-            double = spurious & detected & (spurious_det != outcomes)
-            outcomes[double] = self.rng.integers(0, 2, size=int(np.sum(double))).astype(np.int8)
-            is_dark_count = is_dark_count | alone  # a noise click, not a signal detection
-            detected = detected | spurious
+        else:
+            spurious = np.zeros(n, dtype=bool)
+            spurious_det = np.zeros(n, dtype=np.int8)
+
+        fired_0 = photon_fired_0 | (is_dark & (dark_det == 0)) | (spurious & (spurious_det == 0))
+        fired_1 = photon_fired_1 | (is_dark & (dark_det == 1)) | (spurious & (spurious_det == 1))
+        detected = fired_0 | fired_1
+        is_double_click = fired_0 & fired_1
+        outcomes = fired_1.astype(np.int8)
+        # Double click: both detectors fired; Bob records it and assigns a random bit
+        # (the standard "squashing" treatment, e.g. Beaudry, Moroder & Lutkenhaus 2008).
+        outcomes[is_double_click] = self.rng.integers(0, 2, size=int(np.sum(is_double_click))).astype(np.int8)
+        is_dark_count = detected & ~photon_click  # click without the signal photon
+
+        # Empty-gate monitor: Bob also opens one detection gate per slot in which no signal
+        # is expected and counts clicks there. Only dark counts can fire it, so it measures
+        # the detectors' in-situ dark-count rate (zero when they are blinded).
+        empty_gate_click = self.rng.random(n) < dark_p
 
         # Build result list
         measurements = []
@@ -212,7 +234,9 @@ class Bob:
                 prob_0=float(prob_0[i]),
                 prob_1=float(prob_1[i]),
                 detected=bool(detected[i]),
-                is_dark_count=bool(is_dark_count[i])
+                is_dark_count=bool(is_dark_count[i]),
+                is_double_click=bool(is_double_click[i]),
+                empty_gate_click=bool(empty_gate_click[i]),
             ))
         
         self._measurements.extend(measurements)

@@ -70,6 +70,65 @@ TEMPORAL_QBER_FEATURES = (
 # Verify feature count
 assert len(TEMPORAL_QBER_FEATURES) == 63, f"Expected 63 features, got {len(TEMPORAL_QBER_FEATURES)}"
 
+# Detector-side and decoy-state monitoring statistics. NOT part of the paper's 63 features:
+# kept as a separate group so models can be trained and reported with and without them.
+MONITORING_FEATURES = [
+    "double_click_rate", "empty_gate_click_rate",
+    "decoy_gain_ratio", "vacuum_yield", "single_photon_fraction",
+]
+
+
+def extract_monitoring_features(
+    bob_detected: np.ndarray,
+    bob_double_click: np.ndarray,
+    bob_empty_gate_click: np.ndarray,
+    pulse_intensity: Optional[np.ndarray] = None,
+    intensities: Optional[List[float]] = None,
+) -> Dict[str, float]:
+    """
+    Monitoring statistics over all transmissions of a session.
+
+    double_click_rate: fraction of Bob's clicks in which both detectors fired. Caused by
+        dark counts, multi-photon pulses and external light such as trojan-horse probe
+        pulses, never by channel noise on a single photon.
+    empty_gate_click_rate: click rate in the no-signal monitoring gate, i.e. the in-situ
+        dark-count rate; zero when the detectors are blinded.
+
+    Decoy-state statistics (NaN without a decoy-state source; intensities[0] = signal mu,
+    intensities[1] = weak decoy nu, plus a vacuum intensity 0):
+    decoy_gain_ratio: Q_nu / Q_mu, the click rate on decoy pulses over that on signal pulses.
+    vacuum_yield: Y0, the click rate on vacuum pulses (dark counts and stray light).
+    single_photon_fraction: lower bound on the fraction of signal-pulse clicks caused by
+        single-photon pulses, Y1_L * mu * exp(-mu) / Q_mu, with the vacuum + weak decoy bound
+        Y1_L = mu/(mu*nu - nu^2) * (Q_nu e^nu - Q_mu e^mu nu^2/mu^2 - (mu^2 - nu^2)/mu^2 Y0)
+        (Ma, Qi, Zhao & Lo, Phys. Rev. A 72, 012326 (2005)). Blocking single-photon pulses
+        (PNS) lowers it; loss that thins every photon alike (beam splitting) does not.
+    """
+    n_clicks = int(np.sum(bob_detected))
+    features = {
+        "double_click_rate": float(np.sum(bob_double_click) / n_clicks) if n_clicks else 0.0,
+        "empty_gate_click_rate": float(np.mean(bob_empty_gate_click)) if len(bob_empty_gate_click) else 0.0,
+        "decoy_gain_ratio": np.nan,
+        "vacuum_yield": np.nan,
+        "single_photon_fraction": np.nan,
+    }
+    if pulse_intensity is None or intensities is None or len(intensities) < 3:
+        return features
+
+    gains = [float(np.mean(bob_detected[pulse_intensity == k])) if np.any(pulse_intensity == k) else np.nan
+             for k in range(len(intensities))]
+    mu, nu = float(intensities[0]), float(intensities[1])
+    vac = [k for k, x in enumerate(intensities) if x == 0]
+    q_mu, q_nu = gains[0], gains[1]
+    y0 = gains[vac[0]] if vac else 0.0
+    if q_mu and q_mu > 0 and not np.isnan(q_nu) and mu > nu > 0:
+        y1_lower = mu / (mu * nu - nu ** 2) * (
+            q_nu * np.exp(nu) - q_mu * np.exp(mu) * nu ** 2 / mu ** 2 - (mu ** 2 - nu ** 2) / mu ** 2 * y0)
+        features["decoy_gain_ratio"] = q_nu / q_mu
+        features["single_photon_fraction"] = float(max(y1_lower, 0.0) * mu * np.exp(-mu) / q_mu)
+    features["vacuum_yield"] = float(y0)
+    return features
+
 
 def extract_temporal_qber_features(
     sifted_alice: np.ndarray,

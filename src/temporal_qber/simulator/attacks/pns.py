@@ -95,7 +95,11 @@ class PNSAttack(BaseAttack):
         self.p_z = 0.5
     
     def _sample_photon_number(self) -> int:
-        """Sample the photon number of a non-empty pulse (see sample_nonempty_photon_number)."""
+        """Photon number of the pulse: Alice's actual number when the simulation tracks
+        photon numbers (decoy-state mode), otherwise a non-empty pulse sampled here with
+        mean_photon_number (see sample_nonempty_photon_number)."""
+        if self.photon_number is not None:
+            return self.photon_number
         return sample_nonempty_photon_number(self.rng, self.mu)
     
     def _choose_basis(self) -> int:
@@ -132,6 +136,7 @@ class PNSAttack(BaseAttack):
             eve_outcome=None,
             eve_info={"photon_number": 1,
                       "attack_type": "pns_single_blocked" if blocked else "pns_single_pass"},
+            photons_to_bob=0 if blocked else 1,
         )
 
     def attack(self, state: np.ndarray, alice_basis: int, alice_bit: int) -> AttackResult:
@@ -174,7 +179,8 @@ class PNSAttack(BaseAttack):
                     "eve_basis": eve_basis,
                     "eve_outcome": eve_outcome,
                     "note": "Eve split one photon from multi-photon pulse"
-                }
+                },
+                photons_to_bob=n_photons - 1,  # Eve keeps one photon
             )
         
         elif n_photons == 1:
@@ -288,7 +294,8 @@ class PNSAttackWithStorage(PNSAttack):
                     "correct_basis": alice_basis,
                     "correct_bit": alice_bit,
                     "note": "Eve stores photon, measures in correct basis after reconciliation"
-                }
+                },
+                photons_to_bob=n_photons - 1,  # Eve keeps one photon
             )
         
         elif n_photons == 1:
